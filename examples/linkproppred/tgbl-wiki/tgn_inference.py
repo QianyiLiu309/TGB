@@ -41,9 +41,12 @@ from tgb.linkproppred.dataset_pyg import PyGLinkPropPredDataset
 # ========== Define helper function...
 # ==========
 
+target_src = 1206
+target_dst = 8734
+
 
 @torch.no_grad()
-def test(loader, neg_sampler, split_mode):
+def test(loader, neg_sampler, positive_sample_mask, split_mode):
     r"""
     Evaluated the dynamic link prediction
     Evaluation happens as 'one vs. many', meaning that each positive edge is evaluated against many negative edges
@@ -61,12 +64,15 @@ def test(loader, neg_sampler, split_mode):
 
     perf_list = []
 
-    target_src = 1206
-    target_dst = 8734
     predictions = []
+    timestamps = []
 
     avg_prob = 0.0
     cnt = 0
+
+    target_edge_cnt = 0
+
+    num_edge_for_memory_update = 0
 
     for pos_batch in loader:
         pos_src, pos_dst, pos_t, pos_msg = (
@@ -76,17 +82,16 @@ def test(loader, neg_sampler, split_mode):
             pos_batch.msg,
         )
 
-        neg_batch_list = neg_sampler.query_batch(
-            pos_src, pos_dst, pos_t, split_mode=split_mode
-        )
+        # neg_batch_list = neg_sampler.query_batch(
+        #     pos_src, pos_dst, pos_t, split_mode=split_mode
+        # )
 
-        for idx, neg_batch in enumerate(neg_batch_list):
-            src = torch.full((1 + len(neg_batch),), pos_src[idx], device=device)
+        negative_indices = set()
+
+        for idx, _ in enumerate(pos_batch):
+            src = torch.full((1,), pos_src[idx], device=device)
             dst = torch.tensor(
-                np.concatenate(
-                    ([np.array([pos_dst.cpu().numpy()[idx]]), np.array(neg_batch)]),
-                    axis=0,
-                ),
+                np.array([pos_dst.cpu().numpy()[idx]]),
                 device=device,
             )
 
@@ -110,6 +115,15 @@ def test(loader, neg_sampler, split_mode):
             cnt += 1
             if src[0] == target_src and dst[0] == target_dst:
                 predictions.append(y_pred[0][0].item())
+                timestamps.append(pos_t[idx].item())
+                if (
+                    positive_sample_mask is not None
+                    and not positive_sample_mask[target_edge_cnt]
+                ):
+                    negative_indices.add(idx)
+                    avg_prob -= y_pred[0][0].cpu().numpy()
+                    cnt -= 1
+                target_edge_cnt += 1
 
             # compute MRR
             input_dict = {
@@ -120,13 +134,40 @@ def test(loader, neg_sampler, split_mode):
             perf_list.append(evaluator.eval(input_dict)[metric])
 
         # Update memory and neighbor loader with ground-truth state.
+
+        if positive_sample_mask is not None:
+            true_pos_src = []
+            true_pos_dst = []
+            true_pos_t = []
+            true_pos_msg = []
+
+            for i in range(len(pos_src)):
+                if i in negative_indices:
+                    continue
+                true_pos_src.append(pos_src[i])
+                true_pos_dst.append(pos_dst[i])
+                true_pos_t.append(pos_t[i])
+                true_pos_msg.append(pos_msg[i])
+
+            pos_src = torch.tensor(np.array(true_pos_src))
+            pos_dst = torch.tensor(np.array(true_pos_dst))
+            pos_t = torch.tensor(np.array(true_pos_t))
+            pos_msg = torch.tensor(np.array(true_pos_msg))
+
+            # print(f"Length of edges used to update memory: {pos_msg.shape}")
+            num_edge_for_memory_update += pos_msg.shape[0]
+
+        if len(pos_src) == 0:
+            continue
         model["memory"].update_state(pos_src, pos_dst, pos_t, pos_msg)
         neighbor_loader.insert(pos_src, pos_dst)
 
     perf_metrics = float(torch.tensor(perf_list).mean())
 
+    print(f"timestamps: {timestamps}")
     print(f"predictions: {predictions}")
     print(f"avg_prob: {avg_prob / cnt}")
+    print(f"num_edge_for_memory_update: {num_edge_for_memory_update}")
     return perf_metrics
 
 
@@ -175,6 +216,78 @@ metric = dataset.eval_metric
 train_data = data[train_mask]
 val_data = data[val_mask]
 test_data = data[test_mask]
+
+print(f"Length of test data: {len(test_data['src'])}")
+
+add_negative_samples = False
+if add_negative_samples:
+    n_bins = 50
+    step = (test_data["t"].max() - test_data["t"].min()) // n_bins
+    print(f"Span of time: {test_data['t'].max() - test_data['t'].min()}")
+    print(f"INFO: step: {step}")
+
+    positive_sample_mask = []
+    new_src = []
+    new_dst = []
+    new_t = []
+    new_msg = []
+
+    index = 0
+    added_cnt = 0
+    for i in range(test_data["t"].min(), test_data["t"].max(), step):
+        while not i < test_data["t"][index + 1]:
+            if (
+                test_data["src"][index].item() == target_src
+                and test_data["dst"][index].item() == target_dst
+            ):
+                positive_sample_mask.append(True)
+            new_src.append(test_data["src"][index].item())
+            new_dst.append(test_data["dst"][index].item())
+            new_t.append(test_data["t"][index].item())
+            # print(test_data["msg"][index])
+            new_msg.append(test_data["msg"][index])
+            index += 1
+
+        new_src.append(test_data["src"][index].item())
+        new_dst.append(test_data["dst"][index].item())
+        new_t.append(test_data["t"][index].item())
+        new_msg.append(test_data["msg"][index])
+
+        positive_sample_mask.append(False)
+        new_src.append(target_src)
+        new_dst.append(target_dst)
+        new_t.append(i)
+        new_msg.append(torch.zeros(172, device=device))
+        added_cnt += 1
+        index += 1
+
+    while not index == len(test_data["t"]):
+        new_src.append(test_data["src"][index].item())
+        new_dst.append(test_data["dst"][index].item())
+        new_t.append(test_data["t"][index].item())
+        new_msg.append(torch.zeros(172, device=device))
+        index += 1
+
+    test_data["src"] = torch.tensor(new_src)
+    test_data["dst"] = torch.tensor(new_dst)
+    test_data["t"] = torch.tensor(new_t)
+    test_data["msg"] = torch.stack(new_msg)
+
+    print(test_data["src"].shape)
+    print(test_data["msg"].shape)
+
+    print(f"added_cnt: {added_cnt}")
+    print(f"Length of test data: {len(test_data['src'])}")
+
+    positive_sample_mask = torch.tensor(positive_sample_mask)
+    print(f"positive_sample_mask: {positive_sample_mask}")
+
+    assert (
+        len(test_data["src"])
+        == len(test_data["dst"])
+        == len(test_data["t"])
+        == len(test_data["msg"])
+    )
 
 train_loader = TemporalDataLoader(train_data, batch_size=BATCH_SIZE)
 val_loader = TemporalDataLoader(val_data, batch_size=BATCH_SIZE)
@@ -264,7 +377,12 @@ for run_idx in range(NUM_RUNS):
 
     # final testing
     start_test = timeit.default_timer()
-    perf_metric_test = test(test_loader, neg_sampler, split_mode="test")
+    if add_negative_samples:
+        perf_metric_test = test(
+            test_loader, neg_sampler, positive_sample_mask, split_mode="test"
+        )
+    else:
+        perf_metric_test = test(test_loader, neg_sampler, None, split_mode="test")
 
     print(f"INFO: Test: Evaluation Setting: >>> ONE-VS-MANY <<< ")
     print(f"\tTest: {metric}: {perf_metric_test: .4f}")
