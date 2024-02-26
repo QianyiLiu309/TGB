@@ -7,6 +7,10 @@ command for an example run:
     python examples/linkproppred/tgbl-wiki/tgn.py --data "tgbl-wiki" --num_run 1 --seed 1
 """
 
+import sys
+
+sys.path.append("..")
+
 import math
 import timeit
 
@@ -39,76 +43,15 @@ from tgb.linkproppred.dataset_pyg import PyGLinkPropPredDataset
 from matplotlib import pyplot as plt
 import pickle
 
+from plot_utils import (
+    get_temporal_edge_times,
+    calculate_average_step_difference,
+    calculate_average_step_difference_full_range,
+)
+
 # ==========
 # ========== Define helper function...
 # ==========
-
-
-def train():
-    r"""
-    Training procedure for TGN model
-    This function uses some objects that are globally defined in the current scrips
-
-    Parameters:
-        None
-    Returns:
-        None
-
-    """
-
-    model["memory"].train()
-    model["gnn"].train()
-    model["link_pred"].train()
-
-    model["memory"].reset_state()  # Start with a fresh memory.
-    neighbor_loader.reset_state()  # Start with an empty graph.
-
-    total_loss = 0
-    for batch in train_loader:
-        batch = batch.to(device)
-        optimizer.zero_grad()
-
-        src, pos_dst, t, msg = batch.src, batch.dst, batch.t, batch.msg
-
-        # Sample negative destination nodes.
-        neg_dst = torch.randint(
-            min_dst_idx,
-            max_dst_idx + 1,
-            (src.size(0),),
-            dtype=torch.long,
-            device=device,
-        )
-
-        n_id = torch.cat([src, pos_dst, neg_dst]).unique()
-        n_id, edge_index, e_id = neighbor_loader(n_id)
-        assoc[n_id] = torch.arange(n_id.size(0), device=device)
-
-        # Get updated memory of all nodes involved in the computation.
-        z, last_update = model["memory"](n_id)
-        z = model["gnn"](
-            z,
-            last_update,
-            edge_index,
-            data.t[e_id].to(device),
-            data.msg[e_id].to(device),
-        )
-
-        pos_out = model["link_pred"](z[assoc[src]], z[assoc[pos_dst]])
-        neg_out = model["link_pred"](z[assoc[src]], z[assoc[neg_dst]])
-
-        loss = criterion(pos_out, torch.ones_like(pos_out))
-        loss += criterion(neg_out, torch.zeros_like(neg_out))
-
-        # Update memory and neighbor loader with ground-truth state.
-        model["memory"].update_state(src, pos_dst, t, msg)
-        neighbor_loader.insert(src, pos_dst)
-
-        loss.backward()
-        optimizer.step()
-        model["memory"].detach()
-        total_loss += float(loss) * batch.num_events
-
-    return total_loss / train_data.num_events
 
 
 @torch.no_grad()
@@ -118,7 +61,6 @@ def test(
     target_dst,
     additional_negative_edges,
     neg_sampler,
-    tgn_results,
     split_mode,
 ):
     r"""
@@ -132,6 +74,8 @@ def test(
     Returns:
         perf_metric: the result of the performance evaluaiton
     """
+    print(f"Target source: {target_src}, Target destination: {target_dst}")
+
     model["memory"].eval()
     model["gnn"].eval()
     model["link_pred"].eval()
@@ -142,7 +86,9 @@ def test(
     predictions_neg = []
     timestamps_neg = []
 
-    perf_list = []
+    adjacent_event_timestamps = []
+
+    relevant_edge_indices = set()
 
     for pos_batch in loader:
         pos_src, pos_dst, pos_t, pos_msg = (
@@ -151,6 +97,7 @@ def test(
             pos_batch.t,
             pos_batch.msg,
         )
+        print
 
         for idx, _ in enumerate(pos_batch):
             # print(f"Positive src: {pos_src[idx]}, Positive dst: {pos_dst[idx]}")
@@ -183,19 +130,44 @@ def test(
             if src[0] == target_src and dst[0] == target_dst:
                 predictions.append(y_pred[0, 0].item())
                 timestamps.append(pos_t[idx].item())
+                relevant_edge_indices.update(e_id.cpu().numpy().tolist())
+            elif (
+                src[0] == target_src
+                or src[0] == target_dst
+                or dst[0] == target_src
+                or dst[0] == target_dst
+            ):
+                adjacent_event_timestamps.append(pos_t[idx].item())
 
+            src_n_ls = []
+            dst_n_ls = []
+            t_neg_ls = []
             while (
                 len(additional_negative_edges) > 0
-                and additional_negative_edges[0][2] < pos_t[idx]
+                and additional_negative_edges[0][2] <= pos_t[idx]
             ):
                 src_n, dst_n, t_neg = additional_negative_edges.pop(0)
-                t_neg = torch.tensor(t_neg, device=device)
+                src_n_ls.append(src_n)
+                dst_n_ls.append(dst_n)
+                t_neg_ls.append(t_neg)
 
-                src_n = torch.full((1,), src_n, device=device)
-                dst_n = torch.full((1,), dst_n, device=device)
+            t_neg = torch.tensor(t_neg_ls, device=device)
+            src_n = torch.tensor(src_n_ls, device=device)
+            dst_n = torch.tensor(dst_n_ls, device=device)
+            # print(f"dst_n.shape: {dst_n.shape}")
+            # print(f"t_neg.shape: {src_n.shape}")
+            # print(f"t_neg.shape: {t_neg.shape}")
 
-                n_id = torch.cat([src_n, dst_n]).unique()
-                # print(f"n_id: {n_id}")
+            # t_neg = torch.tensor(t_neg, device=device)
+
+            # src_n = torch.full((1,), src_n, device=device)
+            # dst_n = torch.full((1,), dst_n, device=device)
+
+            n_id = torch.cat(
+                [src_n, dst_n],
+            ).unique()
+            # print(f"n_id: {n_id}")
+            if len(n_id) != 0:
                 n_id, edge_index, e_id = neighbor_loader(n_id)
                 # print(
                 #     f"n_id: {n_id}, edge_index: {edge_index}, e_id: {e_id}, t_neg: {t_neg}, pos_t: {pos_t[idx]}"
@@ -216,39 +188,86 @@ def test(
                 y_pred_neg = model["link_pred"](z[assoc[src_n]], z[assoc[dst_n]])
                 # print(f"Negative prediction: {y_pred_neg}")
 
-                predictions_neg.append(y_pred_neg.item())
-                timestamps_neg.append(t_neg.item())
-
-            # compute MRR
-            input_dict = {
-                "y_pred_pos": np.array([y_pred[0, :].squeeze(dim=-1).cpu()]),
-                "y_pred_neg": np.array(y_pred[1:, :].squeeze(dim=-1).cpu()),
-                "eval_metric": [metric],
-            }
-            perf_list.append(evaluator.eval(input_dict)[metric])
+                predictions_neg.extend(y_pred_neg.squeeze(-1).cpu().numpy())
+                timestamps_neg.extend(t_neg.cpu().numpy())
 
         # Update memory and neighbor loader with ground-truth state.
         model["memory"].update_state(pos_src, pos_dst, pos_t, pos_msg)
         neighbor_loader.insert(pos_src, pos_dst)
 
-    perf_metrics = float(torch.tensor(perf_list).mean())
+    # negative edges after the final prediction
+    src_n_ls = []
+    dst_n_ls = []
+    t_neg_ls = []
+    while len(additional_negative_edges) > 0:
+        src_n, dst_n, t_neg = additional_negative_edges.pop(0)
+        src_n_ls.append(src_n)
+        dst_n_ls.append(dst_n)
+        t_neg_ls.append(t_neg)
 
-    # print("Positive predictions: ", predictions)
-    # print("Positive timestamps: ", timestamps)
-    # print("Negative predictions: ", predictions_neg)
-    # print("Negative timestamps: ", timestamps_neg)
+    t_neg = torch.tensor(t_neg_ls, device=device)
+    src_n = torch.tensor(src_n_ls, device=device)
+    dst_n = torch.tensor(dst_n_ls, device=device)
+    # print(f"dst_n.shape: {dst_n.shape}")
+    # print(f"t_neg.shape: {src_n.shape}")
+    # print(f"t_neg.shape: {t_neg.shape}")
 
-    all_preds = np.concatenate((np.array(predictions), np.array(predictions_neg)))
-    all_timestamps = np.concatenate((np.array(timestamps), np.array(timestamps_neg)))
+    # t_neg = torch.tensor(t_neg, device=device)
+
+    # src_n = torch.full((1,), src_n, device=device)
+    # dst_n = torch.full((1,), dst_n, device=device)
+
+    n_id = torch.cat(
+        [src_n, dst_n],
+    ).unique()
+    # print(f"n_id: {n_id}")
+    if len(n_id) != 0:
+        n_id, edge_index, e_id = neighbor_loader(n_id)
+        # print(
+        #     f"n_id: {n_id}, edge_index: {edge_index}, e_id: {e_id}, t_neg: {t_neg}, pos_t: {pos_t[idx]}"
+        # )
+        assoc[n_id] = torch.arange(n_id.size(0), device=device)
+
+        # Get updated memory of all nodes involved in the computation.
+        z, last_update = model["memory"](n_id)
+        # print(f"z: {z.shape}, last_update: {last_update.shape}")
+        z = model["gnn"](
+            z,
+            last_update,
+            edge_index,
+            data.t[e_id].to(device),
+            data.msg[e_id].to(device),
+        )
+
+        y_pred_neg = model["link_pred"](z[assoc[src_n]], z[assoc[dst_n]])
+        # print(f"Negative prediction: {y_pred_neg}")
+
+        predictions_neg.extend(y_pred_neg.squeeze(-1).cpu().numpy())
+        timestamps_neg.extend(t_neg.cpu().numpy())
+
+    print(len(predictions), len(predictions_neg))
+    print(np.array(predictions_neg).shape)
+    all_preds = np.array(predictions_neg)
+    all_timestamps = np.array(timestamps_neg)
+    # all_preds = np.concatenate((np.array(predictions), np.array(predictions_neg)))
+    # all_timestamps = np.concatenate((np.array(timestamps), np.array(timestamps_neg)))
     sort = np.argsort(all_timestamps)
 
     all_preds = all_preds[sort]
     all_timestamps = all_timestamps[sort]
+    print(f"Number of distinct predictions: {len(set(all_timestamps))}")
     atimes = np.array(timestamps)
 
-    tgn_results[(target_src, target_dst)] = [all_timestamps, all_preds, atimes]
+    print(f"Length of all_preds: {len(all_preds)}")
+    print(f"Number of additional negative edges: {len(additional_negative_edges)}")
 
-    return perf_metrics
+    return [
+        all_timestamps,
+        all_preds,
+        atimes,
+        adjacent_event_timestamps,
+        list(relevant_edge_indices),
+    ]
 
 
 # ==========
@@ -263,7 +282,7 @@ start_overall = timeit.default_timer()
 args, _ = get_args()
 print("INFO: Arguments:", args)
 
-DATA = "tgbl-wiki"
+DATA = args.data
 LR = args.lr
 BATCH_SIZE = args.bs
 K_VALUE = args.k_value
@@ -305,29 +324,33 @@ n_bins = 50
 
 tgn_results = {}
 
-for i in range(0, len(biggest), 50):
+run_all = False
+
+for i in range(100, len(biggest), 50):
     target_src, target_dst = biggest[i]
     count = counts[(target_src, target_dst)]
     if count == 1:
         break
-
     print(
         f"INFO: Target source: {target_src}, Target destination: {target_dst}, Count: {count}"
     )
-
     additional_negative_edges = []
 
     time_range = test_data["t"].max() - test_data["t"].min()
-    lower_bound = test_data["t"].min() - time_range * 0.2
-    upper_bound = test_data["t"].max() + time_range * 0.2
 
-    step = (upper_bound - lower_bound) // n_bins
+    lower_bound = int(test_data["t"].min() - time_range * 0.2)
+    upper_bound = int(test_data["t"].max() + time_range * 0.2)
+
+    # step = (upper_bound - lower_bound) // n_bins
+    step = 1
     print(f"Span of time: {test_data['t'].max() - test_data['t'].min()}")
     print(f"INFO: step: {step}")
-    for i in range(n_bins):
-        additional_negative_edges.append(
-            (target_src, target_dst, lower_bound + i * step)
-        )
+
+    i = lower_bound
+    while i <= upper_bound:
+        additional_negative_edges.append((target_src, target_dst, i))
+        i += step
+    print(f"Number of additional negative edges: {len(additional_negative_edges)}")
     # print(f"Length of additional negative edges: {len(additional_negative_edges)}")
     # print(f"First element of additional negative edges: {additional_negative_edges[0]}")
     # print(
@@ -423,18 +446,113 @@ for i in range(0, len(biggest), 50):
 
         # final testing
         start_test = timeit.default_timer()
-        perf_metric_test = test(
+        prediction_results = test(
             test_loader,
             target_src,
             target_dst,
             additional_negative_edges,
             neg_sampler,
-            tgn_results,
             split_mode="test",
         )
 
+        if run_all:
+            tgn_results[(target_src, target_dst)] = prediction_results
+        else:
+            print(f"Lenght of prediction results: {len(prediction_results[1])}")
+            print(f"Number of events: {len(prediction_results[2])}")
+            print(f"Number of adjacent events: {len(prediction_results[3])}")
+            print(f"Number of relevant events: {len(prediction_results[4])}")
+
+            one_hop_neighbor_timestamp_set = set(prediction_results[3])
+            event_timestamp_set = set(prediction_results[2])
+            print(event_timestamp_set)
+
+            two_hop_neighbor_timestamp = []
+            for index in prediction_results[4]:
+                # print(f"Index: {index}")
+                timestamp = test_data.t[index]
+                # print(f"Timestamp: {timestamp}")
+                if (
+                    timestamp not in one_hop_neighbor_timestamp_set
+                    and timestamp not in event_timestamp_set
+                ):
+                    two_hop_neighbor_timestamp.append(timestamp)
+
+            print(
+                f"Number of two-hop neighbor events: {len(two_hop_neighbor_timestamp)}"
+            )
+
+            hop0, hop1, hop2 = get_temporal_edge_times(
+                dataset, target_src, target_dst, 2, mask=test_mask
+            )
+
+            for hop_threshold in range(3):
+                print(
+                    "Ignoring events:",
+                    np.mean(
+                        np.abs(prediction_results[1][1:] - prediction_results[1][:-1])
+                    ),
+                )
+
+                average_step_difference = calculate_average_step_difference(
+                    timestamps_by_hops=[hop0, hop1, hop2],
+                    preds=prediction_results[1],
+                    pred_timestamps=prediction_results[0],
+                    hop_threshold=hop_threshold,
+                )
+                print(
+                    f"Average step difference for hop {hop_threshold}: {average_step_difference}"
+                )
+
+                average_step_difference_full_range = (
+                    calculate_average_step_difference_full_range(
+                        timestamps_by_hops=[hop0, hop1, hop2],
+                        preds=prediction_results[1],
+                        pred_timestamps=prediction_results[0],
+                        hop_threshold=hop_threshold,
+                    )
+                )
+                print(
+                    f"Average step difference for the full range: {average_step_difference_full_range}"
+                )
+                print("\n")
+
+            print(f"Length of hop0: {len(hop0)}")
+            print(f"Length of hop1: {len(hop1)}")
+            print(f"Length of hop2: {len(hop2)}")
+
+            plt.plot(
+                prediction_results[0],
+                prediction_results[1],
+                alpha=0.7,
+                linewidth=1.5,
+            )
+            plt.xlabel("Time")
+            plt.ylabel("Predicted link probability")
+            plt.ylim(-0.01, 1.01)
+
+            for etime in hop0:
+                plt.axvline(x=etime, color="C1", ls="--", linewidth=1.0, alpha=1.0)
+
+            for etime in hop1:
+                plt.axvline(x=etime, color="C2", ls="--", linewidth=1.0, alpha=1.0)
+
+            for etime in hop2:
+                plt.axvline(x=etime, color="C3", ls="--", linewidth=1.0, alpha=1.0)
+
+            # for etime in two_hop_neighbor_timestamp:
+            #     assert etime not in prediction_results[2]
+            #     plt.axvline(x=etime, color="blue", ls="--", linewidth=1.0, alpha=1.0)
+
+            # for etime in prediction_results[3]:
+            #     plt.axvline(x=etime, color="green", ls="--", linewidth=1.0, alpha=1.0)
+
+            # for etime in prediction_results[2]:
+            #     plt.axvline(x=etime, color="red", ls="--", linewidth=1.0, alpha=1.0)
+
+            plt.show()
+
         print(f"INFO: Test: Evaluation Setting: >>> ONE-VS-MANY <<< ")
-        print(f"\tTest: {metric}: {perf_metric_test: .4f}")
         test_time = timeit.default_timer() - start_test
         print(f"\tTest: Elapsed Time (s): {test_time: .4f}")
 
