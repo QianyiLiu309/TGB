@@ -42,6 +42,7 @@ from tgb.linkproppred.dataset_pyg import PyGLinkPropPredDataset
 
 from matplotlib import pyplot as plt
 import pickle
+import tqdm
 
 from plot_utils import (
     get_temporal_edge_times,
@@ -90,14 +91,13 @@ def test(
 
     relevant_edge_indices = set()
 
-    for pos_batch in loader:
+    for pos_batch in tqdm.tqdm(loader):
         pos_src, pos_dst, pos_t, pos_msg = (
             pos_batch.src,
             pos_batch.dst,
             pos_batch.t,
             pos_batch.msg,
         )
-        print
 
         for idx, _ in enumerate(pos_batch):
             # print(f"Positive src: {pos_src[idx]}, Positive dst: {pos_dst[idx]}")
@@ -154,14 +154,6 @@ def test(
             t_neg = torch.tensor(t_neg_ls, device=device)
             src_n = torch.tensor(src_n_ls, device=device)
             dst_n = torch.tensor(dst_n_ls, device=device)
-            # print(f"dst_n.shape: {dst_n.shape}")
-            # print(f"t_neg.shape: {src_n.shape}")
-            # print(f"t_neg.shape: {t_neg.shape}")
-
-            # t_neg = torch.tensor(t_neg, device=device)
-
-            # src_n = torch.full((1,), src_n, device=device)
-            # dst_n = torch.full((1,), dst_n, device=device)
 
             n_id = torch.cat(
                 [src_n, dst_n],
@@ -175,19 +167,25 @@ def test(
                 assoc[n_id] = torch.arange(n_id.size(0), device=device)
 
                 # Get updated memory of all nodes involved in the computation.
-                z, last_update = model["memory"](n_id)
+                s, last_update = model["memory"](n_id)
                 # print(f"z: {z.shape}, last_update: {last_update.shape}")
-                z = model["gnn"](
-                    z,
-                    last_update,
-                    edge_index,
-                    data.t[e_id].to(device),
-                    data.msg[e_id].to(device),
-                )
 
-                y_pred_neg = model["link_pred"](z[assoc[src_n]], z[assoc[dst_n]])
-                # print(f"Negative prediction: {y_pred_neg}")
+                y_pred_negs = []
+                for sn, dn, tn in zip(src_n, dst_n, t_neg):
+                    current_time = torch.tensor([tn] * e_id.shape[0], dtype=torch.float32, device=s.device)
+                    z = model["gnn"](
+                        s,
+                        last_update,
+                        edge_index,
+                        data.t[e_id].to(device),
+                        data.msg[e_id].to(device),
+                        current_time=current_time
+                    )
 
+                    y_pred_neg = model["link_pred"](z[assoc[sn[None]]], z[assoc[dn[None]]])
+                    y_pred_negs.append(y_pred_neg)
+
+                y_pred_neg = torch.cat(y_pred_negs)
                 predictions_neg.extend(y_pred_neg.squeeze(-1).cpu().numpy())
                 timestamps_neg.extend(t_neg.cpu().numpy())
 
