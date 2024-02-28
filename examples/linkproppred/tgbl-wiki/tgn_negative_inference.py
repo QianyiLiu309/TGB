@@ -75,6 +75,54 @@ def test(
     Returns:
         perf_metric: the result of the performance evaluaiton
     """
+    def evaluate_negative(end_time):
+        src_n_ls = []
+        dst_n_ls = []
+        t_neg_ls = []
+        while (
+                len(additional_negative_edges) > 0
+                and additional_negative_edges[0][2] <= end_time
+        ):
+            src_n, dst_n, t_neg = additional_negative_edges.pop(0)
+            src_n_ls.append(src_n)
+            dst_n_ls.append(dst_n)
+            t_neg_ls.append(t_neg)
+
+        t_neg = torch.tensor(t_neg_ls, device=device)
+        src_n = torch.tensor(src_n_ls, device=device)
+        dst_n = torch.tensor(dst_n_ls, device=device)
+
+        n_id = torch.cat(
+            [src_n, dst_n],
+        ).unique()
+        # print(f"n_id: {n_id}")
+        if len(n_id) != 0:
+            n_id, edge_index, e_id = neighbor_loader(n_id)
+            assoc[n_id] = torch.arange(n_id.size(0), device=device)
+
+            # Get updated memory of all nodes involved in the computation.
+            s, last_update = model["memory"](n_id)
+            # print(f"z: {z.shape}, last_update: {last_update.shape}")
+
+            y_pred_negs = []
+            for sn, dn, tn in zip(src_n, dst_n, t_neg):
+                current_time = torch.tensor([tn] * e_id.shape[0], dtype=torch.float32, device=s.device)
+                z = model["gnn"](
+                    s,
+                    last_update,
+                    edge_index,
+                    data.t[e_id].to(device),
+                    data.msg[e_id].to(device),
+                    current_time=current_time
+                )
+
+                y_pred_neg = model["link_pred"](z[assoc[sn[None]]], z[assoc[dn[None]]])
+                y_pred_negs.append(y_pred_neg)
+
+            y_pred_neg = torch.cat(y_pred_negs)
+            predictions_neg.extend(y_pred_neg.squeeze(-1).cpu().numpy())
+            timestamps_neg.extend(t_neg.cpu().numpy())
+
     print(f"Target source: {target_src}, Target destination: {target_dst}")
 
     model["memory"].eval()
@@ -139,109 +187,14 @@ def test(
             ):
                 adjacent_event_timestamps.append(pos_t[idx].item())
 
-            src_n_ls = []
-            dst_n_ls = []
-            t_neg_ls = []
-            while (
-                len(additional_negative_edges) > 0
-                and additional_negative_edges[0][2] <= pos_t[idx]
-            ):
-                src_n, dst_n, t_neg = additional_negative_edges.pop(0)
-                src_n_ls.append(src_n)
-                dst_n_ls.append(dst_n)
-                t_neg_ls.append(t_neg)
-
-            t_neg = torch.tensor(t_neg_ls, device=device)
-            src_n = torch.tensor(src_n_ls, device=device)
-            dst_n = torch.tensor(dst_n_ls, device=device)
-
-            n_id = torch.cat(
-                [src_n, dst_n],
-            ).unique()
-            # print(f"n_id: {n_id}")
-            if len(n_id) != 0:
-                n_id, edge_index, e_id = neighbor_loader(n_id)
-                # print(
-                #     f"n_id: {n_id}, edge_index: {edge_index}, e_id: {e_id}, t_neg: {t_neg}, pos_t: {pos_t[idx]}"
-                # )
-                assoc[n_id] = torch.arange(n_id.size(0), device=device)
-
-                # Get updated memory of all nodes involved in the computation.
-                s, last_update = model["memory"](n_id)
-                # print(f"z: {z.shape}, last_update: {last_update.shape}")
-
-                y_pred_negs = []
-                for sn, dn, tn in zip(src_n, dst_n, t_neg):
-                    current_time = torch.tensor([tn] * e_id.shape[0], dtype=torch.float32, device=s.device)
-                    z = model["gnn"](
-                        s,
-                        last_update,
-                        edge_index,
-                        data.t[e_id].to(device),
-                        data.msg[e_id].to(device),
-                        current_time=current_time
-                    )
-
-                    y_pred_neg = model["link_pred"](z[assoc[sn[None]]], z[assoc[dn[None]]])
-                    y_pred_negs.append(y_pred_neg)
-
-                y_pred_neg = torch.cat(y_pred_negs)
-                predictions_neg.extend(y_pred_neg.squeeze(-1).cpu().numpy())
-                timestamps_neg.extend(t_neg.cpu().numpy())
+            evaluate_negative(pos_t[idx])
 
         # Update memory and neighbor loader with ground-truth state.
         model["memory"].update_state(pos_src, pos_dst, pos_t, pos_msg)
         neighbor_loader.insert(pos_src, pos_dst)
 
-    # negative edges after the final prediction
-    src_n_ls = []
-    dst_n_ls = []
-    t_neg_ls = []
-    while len(additional_negative_edges) > 0:
-        src_n, dst_n, t_neg = additional_negative_edges.pop(0)
-        src_n_ls.append(src_n)
-        dst_n_ls.append(dst_n)
-        t_neg_ls.append(t_neg)
-
-    t_neg = torch.tensor(t_neg_ls, device=device)
-    src_n = torch.tensor(src_n_ls, device=device)
-    dst_n = torch.tensor(dst_n_ls, device=device)
-    # print(f"dst_n.shape: {dst_n.shape}")
-    # print(f"t_neg.shape: {src_n.shape}")
-    # print(f"t_neg.shape: {t_neg.shape}")
-
-    # t_neg = torch.tensor(t_neg, device=device)
-
-    # src_n = torch.full((1,), src_n, device=device)
-    # dst_n = torch.full((1,), dst_n, device=device)
-
-    n_id = torch.cat(
-        [src_n, dst_n],
-    ).unique()
-    # print(f"n_id: {n_id}")
-    if len(n_id) != 0:
-        n_id, edge_index, e_id = neighbor_loader(n_id)
-        # print(
-        #     f"n_id: {n_id}, edge_index: {edge_index}, e_id: {e_id}, t_neg: {t_neg}, pos_t: {pos_t[idx]}"
-        # )
-        assoc[n_id] = torch.arange(n_id.size(0), device=device)
-
-        # Get updated memory of all nodes involved in the computation.
-        z, last_update = model["memory"](n_id)
-        # print(f"z: {z.shape}, last_update: {last_update.shape}")
-        z = model["gnn"](
-            z,
-            last_update,
-            edge_index,
-            data.t[e_id].to(device),
-            data.msg[e_id].to(device),
-        )
-
-        y_pred_neg = model["link_pred"](z[assoc[src_n]], z[assoc[dst_n]])
-        # print(f"Negative prediction: {y_pred_neg}")
-
-        predictions_neg.extend(y_pred_neg.squeeze(-1).cpu().numpy())
-        timestamps_neg.extend(t_neg.cpu().numpy())
+    max_t = additional_negative_edges[-1][2] + 1
+    evaluate_negative(max_t)
 
     print(len(predictions), len(predictions_neg))
     print(np.array(predictions_neg).shape)
