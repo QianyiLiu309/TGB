@@ -55,6 +55,147 @@ from plot_utils import (
 # ==========
 
 
+def train():
+    r"""
+    Training procedure for TGN model
+    This function uses some objects that are globally defined in the current scrips
+
+    Parameters:
+        None
+    Returns:
+        None
+
+    """
+
+    model["memory"].train()
+    model["gnn"].train()
+    model["link_pred"].train()
+
+    model["memory"].reset_state()  # Start with a fresh memory.
+    neighbor_loader.reset_state()  # Start with an empty graph.
+
+    total_loss = 0
+    for batch in train_loader:
+        batch = batch.to(device)
+        optimizer.zero_grad()
+
+        src, pos_dst, t, msg = batch.src, batch.dst, batch.t, batch.msg
+
+        # Sample negative destination nodes.
+        neg_dst = torch.randint(
+            min_dst_idx,
+            max_dst_idx + 1,
+            (src.size(0),),
+            dtype=torch.long,
+            device=device,
+        )
+
+        n_id = torch.cat([src, pos_dst, neg_dst]).unique()
+        n_id, edge_index, e_id = neighbor_loader(n_id)
+        assoc[n_id] = torch.arange(n_id.size(0), device=device)
+
+        # Get updated memory of all nodes involved in the computation.
+        z, last_update = model["memory"](n_id)
+        z = model["gnn"](
+            z,
+            last_update,
+            edge_index,
+            data.t[e_id].to(device),
+            data.msg[e_id].to(device),
+        )
+
+        pos_out = model["link_pred"](z[assoc[src]], z[assoc[pos_dst]])
+        neg_out = model["link_pred"](z[assoc[src]], z[assoc[neg_dst]])
+
+        loss = criterion(pos_out, torch.ones_like(pos_out))
+        loss += criterion(neg_out, torch.zeros_like(neg_out))
+
+        # Update memory and neighbor loader with ground-truth state.
+        model["memory"].update_state(src, pos_dst, t, msg)
+        neighbor_loader.insert(src, pos_dst)
+
+        loss.backward()
+        optimizer.step()
+        model["memory"].detach()
+        total_loss += float(loss) * batch.num_events
+
+    return total_loss / train_data.num_events
+
+
+@torch.no_grad()
+def valid(loader, neg_sampler, split_mode):
+    r"""
+    Evaluated the dynamic link prediction
+    Evaluation happens as 'one vs. many', meaning that each positive edge is evaluated against many negative edges
+
+    Parameters:
+        loader: an object containing positive attributes of the positive edges of the evaluation set
+        neg_sampler: an object that gives the negative edges corresponding to each positive edge
+        split_mode: specifies whether it is the 'validation' or 'test' set to correctly load the negatives
+    Returns:
+        perf_metric: the result of the performance evaluaiton
+    """
+    model["memory"].eval()
+    model["gnn"].eval()
+    model["link_pred"].eval()
+
+    perf_list = []
+
+    for pos_batch in loader:
+        pos_src, pos_dst, pos_t, pos_msg = (
+            pos_batch.src,
+            pos_batch.dst,
+            pos_batch.t,
+            pos_batch.msg,
+        )
+
+        neg_batch_list = neg_sampler.query_batch(
+            pos_src, pos_dst, pos_t, split_mode=split_mode
+        )
+
+        for idx, neg_batch in enumerate(neg_batch_list):
+            src = torch.full((1 + len(neg_batch),), pos_src[idx], device=device)
+            dst = torch.tensor(
+                np.concatenate(
+                    ([np.array([pos_dst.cpu().numpy()[idx]]), np.array(neg_batch)]),
+                    axis=0,
+                ),
+                device=device,
+            )
+
+            n_id = torch.cat([src, dst]).unique()
+            n_id, edge_index, e_id = neighbor_loader(n_id)
+            assoc[n_id] = torch.arange(n_id.size(0), device=device)
+
+            # Get updated memory of all nodes involved in the computation.
+            z, last_update = model["memory"](n_id)
+            z = model["gnn"](
+                z,
+                last_update,
+                edge_index,
+                data.t[e_id].to(device),
+                data.msg[e_id].to(device),
+            )
+
+            y_pred = model["link_pred"](z[assoc[src]], z[assoc[dst]])
+
+            # compute MRR
+            input_dict = {
+                "y_pred_pos": np.array([y_pred[0, :].squeeze(dim=-1).cpu()]),
+                "y_pred_neg": np.array(y_pred[1:, :].squeeze(dim=-1).cpu()),
+                "eval_metric": [metric],
+            }
+            perf_list.append(evaluator.eval(input_dict)[metric])
+
+        # Update memory and neighbor loader with ground-truth state.
+        model["memory"].update_state(pos_src, pos_dst, pos_t, pos_msg)
+        neighbor_loader.insert(pos_src, pos_dst)
+
+    perf_metrics = float(torch.tensor(perf_list).mean())
+
+    return perf_metrics
+
+
 @torch.no_grad()
 def test(
     loader,
@@ -75,13 +216,14 @@ def test(
     Returns:
         perf_metric: the result of the performance evaluaiton
     """
+
     def evaluate_negative(end_time):
         src_n_ls = []
         dst_n_ls = []
         t_neg_ls = []
         while (
-                len(additional_negative_edges) > 0
-                and additional_negative_edges[0][2] <= end_time
+            len(additional_negative_edges) > 0
+            and additional_negative_edges[0][2] <= end_time
         ):
             src_n, dst_n, t_neg = additional_negative_edges.pop(0)
             src_n_ls.append(src_n)
@@ -106,14 +248,16 @@ def test(
 
             y_pred_negs = []
             for sn, dn, tn in zip(src_n, dst_n, t_neg):
-                current_time = torch.tensor([tn] * e_id.shape[0], dtype=torch.float32, device=s.device)
+                current_time = torch.tensor(
+                    [tn] * e_id.shape[0], dtype=torch.float32, device=s.device
+                )
                 z = model["gnn"](
                     s,
                     last_update,
                     edge_index,
                     data.t[e_id].to(device),
                     data.msg[e_id].to(device),
-                    current_time=current_time
+                    current_time=current_time,
                 )
 
                 y_pred_neg = model["link_pred"](z[assoc[sn[None]]], z[assoc[dn[None]]])
@@ -390,6 +534,23 @@ for i in range(100, len(biggest), 50):
             patience=PATIENCE,
         )
 
+        # ==================================================== Train & Validation
+        # loading the validation negative samples
+        dataset.load_val_ns()
+
+        start_epoch_train = timeit.default_timer()
+        loss = train()
+        print(
+            f"Training loss: {loss:.4f}, Training elapsed Time (s): {timeit.default_timer() - start_epoch_train: .4f}"
+        )
+
+        start_val = timeit.default_timer()
+        perf_metric_val = valid(val_loader, neg_sampler, split_mode="val")
+        print(f"\tValidation {metric}: {perf_metric_val: .4f}")
+        print(
+            f"\tValidation: Elapsed time (s): {timeit.default_timer() - start_val: .4f}"
+        )
+
         # ==================================================== Test
         # first, load the best model
         early_stopper.load_checkpoint(model)
@@ -423,7 +584,7 @@ for i in range(100, len(biggest), 50):
             two_hop_neighbor_timestamp = []
             for index in prediction_results[4]:
                 # print(f"Index: {index}")
-                timestamp = test_data.t[index]
+                timestamp = data.t[index]
                 # print(f"Timestamp: {timestamp}")
                 if (
                     timestamp not in one_hop_neighbor_timestamp_set
