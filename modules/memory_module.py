@@ -16,7 +16,7 @@ from torch.nn import GRUCell, RNNCell, Linear
 from torch_geometric.nn.inits import zeros
 from torch_geometric.utils import scatter
 
-from modules.time_enc import TimeEncoder, ExpTimeEncoder
+from modules.time_enc import TimeEncoder, ExpTimeEncoder, GaussianTimeEncoder
 
 
 TGNMessageStoreType = Dict[int, Tuple[Tensor, Tensor, Tensor, Tensor]]
@@ -72,6 +72,8 @@ class TGNMemory(torch.nn.Module):
             self.time_enc = TimeEncoder(time_dim)
         elif time_encoder == "learned_exp":
             self.time_enc = ExpTimeEncoder(time_dim)
+        elif time_encoder == "learned_gaussian":
+            self.time_enc = GaussianTimeEncoder(time_dim)
 
         # self.gru = GRUCell(message_module.out_channels, memory_dim)
         if memory_updater_cell == "gru":  # for TGN
