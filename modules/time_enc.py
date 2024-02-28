@@ -22,3 +22,19 @@ class TimeEncoder(torch.nn.Module):
 
     def forward(self, t: Tensor) -> Tensor:
         return self.lin(t.view(-1, 1)).cos()
+
+
+class ExpTimeEncoder(torch.nn.Module):
+    def __init__(self, out_channels: int):
+        super().__init__()
+        self.out_channels = out_channels
+        self.lin = Linear(1, out_channels, bias=False)
+
+    def reset_parameters(self):
+        self.lin.reset_parameters()
+
+    def forward(self, t: Tensor) -> Tensor:
+        # [w1 t, w2 t, w3 t, ...]
+        xs = self.lin(t.view(-1, 1)).abs()
+        return torch.exp(-xs)
+

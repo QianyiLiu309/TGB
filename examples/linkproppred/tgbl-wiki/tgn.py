@@ -36,6 +36,8 @@ from modules.memory_module import TGNMemory
 from modules.early_stopping import EarlyStopMonitor
 from tgb.linkproppred.dataset_pyg import PyGLinkPropPredDataset
 
+from tqdm import tqdm
+
 
 # ==========
 # ========== Define helper function...
@@ -128,7 +130,7 @@ def test(loader, neg_sampler, split_mode):
 
     perf_list = []
 
-    for pos_batch in loader:
+    for pos_batch in tqdm(loader):
         pos_src, pos_dst, pos_t, pos_msg = (
             pos_batch.src,
             pos_batch.dst,
@@ -208,6 +210,7 @@ TOLERANCE = args.tolerance
 PATIENCE = args.patience
 NUM_RUNS = args.num_run
 NUM_NEIGHBORS = 10
+TIME_ENCODER = args.time_encoder
 
 
 MODEL_NAME = "TGN"
@@ -247,6 +250,7 @@ memory = TGNMemory(
     TIME_DIM,
     message_module=IdentityMessage(data.msg.size(-1), MEM_DIM, TIME_DIM),
     aggregator_module=LastAggregator(),
+    time_encoder=TIME_ENCODER
 ).to(device)
 
 gnn = GraphAttentionEmbedding(

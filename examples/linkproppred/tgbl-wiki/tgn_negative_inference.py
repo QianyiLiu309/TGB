@@ -246,6 +246,7 @@ TOLERANCE = args.tolerance
 PATIENCE = args.patience
 NUM_RUNS = args.num_run
 NUM_NEIGHBORS = 10
+TIME_ENCODER = args.time_encoder
 
 
 MODEL_NAME = "TGN"
@@ -328,6 +329,7 @@ for i in range(100, len(biggest), 50):
         TIME_DIM,
         message_module=IdentityMessage(data.msg.size(-1), MEM_DIM, TIME_DIM),
         aggregator_module=LastAggregator(),
+        time_encoder=TIME_ENCODER
     ).to(device)
 
     gnn = GraphAttentionEmbedding(
