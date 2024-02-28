@@ -22,8 +22,10 @@ class GraphAttentionEmbedding(torch.nn.Module):
             in_channels, out_channels // 2, heads=2, dropout=0.1, edge_dim=edge_dim
         )
 
-    def forward(self, x, last_update, edge_index, t, msg):
-        rel_t = last_update[edge_index[0]] - t
+    def forward(self, x, last_update, edge_index, t, msg, current_time=None):
+        if current_time is None:
+            current_time = last_update[edge_index[0]]
+        rel_t = current_time - t
         rel_t_enc = self.time_enc(rel_t.to(x.dtype))
         edge_attr = torch.cat([rel_t_enc, msg], dim=-1)
         return self.conv(x, edge_index, edge_attr)
