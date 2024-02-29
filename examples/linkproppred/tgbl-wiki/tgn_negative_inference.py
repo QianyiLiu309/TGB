@@ -74,7 +74,7 @@ def train():
     model["memory"].reset_state()  # Start with a fresh memory.
     neighbor_loader.reset_state()  # Start with an empty graph.
 
-    for batch in train_loader:
+    for batch in tqdm.tqdm(train_loader):
         batch = batch.to(device)
 
         src, pos_dst, t, msg = batch.src, batch.dst, batch.t, batch.msg
@@ -108,11 +108,9 @@ def train():
 
         model["memory"].detach()
 
-    return None
-
 
 @torch.no_grad()
-def valid(loader, neg_sampler, split_mode):
+def valid(loader):
     r"""
     Evaluated the dynamic link prediction
     Evaluation happens as 'one vs. many', meaning that each positive edge is evaluated against many negative edges
@@ -128,7 +126,7 @@ def valid(loader, neg_sampler, split_mode):
     model["gnn"].eval()
     model["link_pred"].eval()
 
-    for pos_batch in loader:
+    for pos_batch in tqdm.tqdm(loader):
         pos_src, pos_dst, pos_t, pos_msg = (
             pos_batch.src,
             pos_batch.dst,
@@ -140,8 +138,6 @@ def valid(loader, neg_sampler, split_mode):
         model["memory"].update_state(pos_src, pos_dst, pos_t, pos_msg)
         neighbor_loader.insert(pos_src, pos_dst)
 
-    return None
-
 
 @torch.no_grad()
 def test(
@@ -149,8 +145,6 @@ def test(
     target_src,
     target_dst,
     additional_negative_edges,
-    neg_sampler,
-    split_mode,
 ):
     r"""
     Evaluated the dynamic link prediction
@@ -344,7 +338,8 @@ MODEL_NAME = "TGN"
 # ==========
 
 # set the device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 
 # data loading
 dataset = PyGLinkPropPredDataset(name=DATA, root="datasets")
@@ -381,7 +376,7 @@ for i in range(100, len(biggest), 50):
 
     time_range = test_data["t"].max() - test_data["t"].min()
 
-    lower_bound = int(test_data["t"].min() - time_range * 0.2)
+    lower_bound = test_data["t"].min()  # can't extend backwards without clashing with val/train
     upper_bound = int(test_data["t"].max() + time_range * 0.2)
 
     # step = (upper_bound - lower_bound) // n_bins
@@ -400,8 +395,9 @@ for i in range(100, len(biggest), 50):
     #     f"Second element of additional negative edges: {additional_negative_edges[1]}"
     # )
 
-    train_loader = TemporalDataLoader(train_data, batch_size=BATCH_SIZE)
-    val_loader = TemporalDataLoader(val_data, batch_size=BATCH_SIZE)
+    # Small batch size unimportant for train/val
+    train_loader = TemporalDataLoader(train_data, batch_size=200)
+    val_loader = TemporalDataLoader(val_data, batch_size=200)
     test_loader = TemporalDataLoader(test_data, batch_size=BATCH_SIZE)
 
     # Ensure to only sample actual destination nodes as negatives.
@@ -433,14 +429,6 @@ for i in range(100, len(biggest), 50):
     link_pred = LinkPredictor(in_channels=EMB_DIM).to(device)
 
     model = {"memory": memory, "gnn": gnn, "link_pred": link_pred}
-
-    optimizer = torch.optim.Adam(
-        set(model["memory"].parameters())
-        | set(model["gnn"].parameters())
-        | set(model["link_pred"].parameters()),
-        lr=LR,
-    )
-    criterion = torch.nn.BCEWithLogitsLoss()
 
     # Helper vector to map global node indices to local ones.
     assoc = torch.empty(data.num_nodes, dtype=torch.long, device=device)
@@ -486,8 +474,8 @@ for i in range(100, len(biggest), 50):
         early_stopper.load_checkpoint(model)
 
         # second, update memory and neighbor_loader with data from train and validation set
-        _ = train()
-        _ = valid(val_loader, neg_sampler, split_mode="val")
+        train()
+        valid(val_loader)
 
         # loading the test negative samples
         dataset.load_test_ns()
@@ -499,8 +487,6 @@ for i in range(100, len(biggest), 50):
             target_src,
             target_dst,
             additional_negative_edges,
-            neg_sampler,
-            split_mode="test",
         )
 
         if run_all:
