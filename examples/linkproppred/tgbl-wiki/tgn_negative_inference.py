@@ -48,6 +48,7 @@ from plot_utils import (
     get_temporal_edge_times,
     calculate_average_step_difference,
     calculate_average_step_difference_full_range,
+    total_variation_per_unit_time
 )
 
 # ==========
@@ -519,6 +520,13 @@ for i in range(100, len(biggest), 50):
             hop0, hop1, hop2 = get_temporal_edge_times(
                 dataset, target_src, target_dst, 2, mask=test_mask
             )
+
+            for hop_threshold in range(4):
+                totvar, totvar_per_sec = total_variation_per_unit_time([hop0, hop1, hop2][:hop_threshold], prediction_results[1],
+                                                       prediction_results[0])
+
+                print(f"TotalVar-{hop_threshold} = {totvar}")
+                print(f"TotalVar/s-{hop_threshold} = {totvar_per_sec}")
 
             for hop_threshold in range(3):
                 print(
