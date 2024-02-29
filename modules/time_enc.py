@@ -29,6 +29,8 @@ class ExpTimeEncoder(torch.nn.Module):
         super().__init__()
         self.out_channels = out_channels
         self.lin = Linear(1, out_channels, bias=False)
+        with torch.no_grad():
+            self.lin.weight *= 0.1
 
     def reset_parameters(self):
         self.lin.reset_parameters()
@@ -41,21 +43,15 @@ class ExpTimeEncoder(torch.nn.Module):
 
 class GaussianTimeEncoder(torch.nn.Module):
     """Inspired by Gaussian PDF"""
-    def __init__(self, out_channels: int, eps=1e-4):
+    def __init__(self, out_channels: int):
         super().__init__()
         self.out_channels = out_channels
-        self.lin = Linear(1, out_channels, bias=False)
-        self.lin_s = Linear(1, out_channels, bias=False)
-        self.eps = eps
+        self.lin = Linear(1, out_channels, bias=True)
         with torch.no_grad():
-            self.lin_s.weight *= 10
+            self.lin.weight *= 0.1
 
     def reset_parameters(self):
         self.lin.reset_parameters()
-        self.lin_s.reset_parameters()
 
     def forward(self, t: Tensor) -> Tensor:
-        t = t.view(-1, 1)
-        m = self.lin(t)
-        s = self.lin_s(t)
-        return torch.exp(-((t - m) / (s + self.eps)) ** 2)
+        return torch.exp(-self.lin(t.view(-1, 1)) ** 2)

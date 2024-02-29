@@ -376,7 +376,7 @@ for i in range(100, len(biggest), 50):
 
     time_range = test_data["t"].max() - test_data["t"].min()
 
-    lower_bound = test_data["t"].min()  # can't extend backwards without clashing with val/train
+    lower_bound = int(test_data["t"].min())  # can't extend backwards without clashing with val/train
     upper_bound = int(test_data["t"].max() + time_range * 0.2)
 
     # step = (upper_bound - lower_bound) // n_bins
