@@ -211,6 +211,7 @@ PATIENCE = args.patience
 NUM_RUNS = args.num_run
 NUM_NEIGHBORS = 10
 TIME_ENCODER = args.time_encoder
+MULTIPLIER = args.mul
 
 
 MODEL_NAME = "TGN"
@@ -250,7 +251,8 @@ memory = TGNMemory(
     TIME_DIM,
     message_module=IdentityMessage(data.msg.size(-1), MEM_DIM, TIME_DIM),
     aggregator_module=LastAggregator(),
-    time_encoder=TIME_ENCODER
+    time_encoder=TIME_ENCODER,
+    multiplier=MULTIPLIER,
 ).to(device)
 
 gnn = GraphAttentionEmbedding(

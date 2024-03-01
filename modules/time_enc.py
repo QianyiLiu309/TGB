@@ -5,7 +5,6 @@ Reference:
     - https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/nn/models/tgn.html
 """
 
-
 import torch
 from torch import Tensor
 from torch.nn import Linear
@@ -51,6 +50,7 @@ class ExpTimeEncoder(torch.nn.Module):
 
 class GaussianTimeEncoder(torch.nn.Module):
     """Inspired by Gaussian PDF"""
+
     def __init__(self, out_channels: int, mul=0.01):
         super().__init__()
         self.out_channels = out_channels

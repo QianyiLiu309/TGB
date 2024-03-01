@@ -48,7 +48,7 @@ from plot_utils import (
     get_temporal_edge_times,
     calculate_average_step_difference,
     calculate_average_step_difference_full_range,
-    total_variation_per_unit_time
+    total_variation_per_unit_time,
 )
 
 # ==========
@@ -333,6 +333,7 @@ PATIENCE = args.patience
 NUM_RUNS = args.num_run
 NUM_NEIGHBORS = 10
 TIME_ENCODER = args.time_encoder
+MULTIPLIER = args.mul
 
 
 MODEL_NAME = "TGN"
@@ -377,7 +378,9 @@ for i in range(100, len(biggest), 50):
 
     time_range = test_data["t"].max() - test_data["t"].min()
 
-    lower_bound = int(test_data["t"].min())  # can't extend backwards without clashing with val/train
+    lower_bound = int(
+        test_data["t"].min()
+    )  # can't extend backwards without clashing with val/train
     upper_bound = int(test_data["t"].max() + time_range * 0.2)
 
     # step = (upper_bound - lower_bound) // n_bins
@@ -418,6 +421,7 @@ for i in range(100, len(biggest), 50):
         message_module=IdentityMessage(data.msg.size(-1), MEM_DIM, TIME_DIM),
         aggregator_module=LastAggregator(),
         time_encoder=TIME_ENCODER,
+        multiplier=MULTIPLIER,
     ).to(device)
 
     gnn = GraphAttentionEmbedding(
@@ -522,8 +526,11 @@ for i in range(100, len(biggest), 50):
             )
 
             for hop_threshold in range(4):
-                totvar, totvar_per_sec = total_variation_per_unit_time([hop0, hop1, hop2][:hop_threshold], prediction_results[1],
-                                                       prediction_results[0])
+                totvar, totvar_per_sec = total_variation_per_unit_time(
+                    [hop0, hop1, hop2][:hop_threshold],
+                    prediction_results[1],
+                    prediction_results[0],
+                )
 
                 print(f"TotalVar-{hop_threshold} = {totvar}")
                 print(f"TotalVar/s-{hop_threshold} = {totvar_per_sec}")
