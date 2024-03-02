@@ -123,60 +123,6 @@ def train():
     return total_loss / train_data.num_events
 
 
-def train():
-    r"""
-    Training procedure for TGN model
-    This function uses some objects that are globally defined in the current scrips
-
-    Parameters:
-        None
-    Returns:
-        None
-
-    """
-
-    model["memory"].train()
-    model["gnn"].train()
-    model["link_pred"].train()
-
-    model["memory"].reset_state()  # Start with a fresh memory.
-    neighbor_loader.reset_state()  # Start with an empty graph.
-
-    for batch in tqdm(train_loader):
-        batch = batch.to(device)
-
-        src, pos_dst, t, msg = batch.src, batch.dst, batch.t, batch.msg
-
-        # Sample negative destination nodes.
-        neg_dst = torch.randint(
-            min_dst_idx,
-            max_dst_idx + 1,
-            (src.size(0),),
-            dtype=torch.long,
-            device=device,
-        )
-
-        n_id = torch.cat([src, pos_dst, neg_dst]).unique()
-        n_id, edge_index, e_id = neighbor_loader(n_id)
-        assoc[n_id] = torch.arange(n_id.size(0), device=device)
-
-        # Get updated memory of all nodes involved in the computation.
-        z, last_update = model["memory"](n_id)
-        z = model["gnn"](
-            z,
-            last_update,
-            edge_index,
-            data.t[e_id].to(device),
-            data.msg[e_id].to(device),
-        )
-
-        # Update memory and neighbor loader with ground-truth state.
-        model["memory"].update_state(src, pos_dst, t, msg)
-        neighbor_loader.insert(src, pos_dst)
-
-        model["memory"].detach()
-
-
 @torch.no_grad()
 def valid(loader):
     r"""
@@ -478,6 +424,8 @@ MULTIPLIER = args.mul
 
 
 MODEL_NAME = "TGN"
+
+DO_REAL_TEST = False
 # ==========
 
 # set the device
@@ -637,8 +585,9 @@ for i in range(100, len(biggest), 50):
         # loading the test negative samples
         dataset.load_test_ns()
         early_stopper.load_checkpoint(model)
-        perf_metric_test = real_test(test_loader, neg_sampler, split_mode="test")
-        print(f"Performance metric on test dataset: {perf_metric_test}")
+        if DO_REAL_TEST:
+            perf_metric_test = real_test(test_loader, neg_sampler, split_mode="test")
+            print(f"Performance metric on test dataset: {perf_metric_test}")
 
         # final testing
         start_test = timeit.default_timer()
