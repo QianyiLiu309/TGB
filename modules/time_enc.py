@@ -7,7 +7,9 @@ Reference:
 
 import torch
 from torch import Tensor
-from torch.nn import Linear
+from torch.nn import Linear, Parameter
+
+import numpy as np
 
 
 class TimeEncoder(torch.nn.Module):
@@ -66,3 +68,47 @@ class GaussianTimeEncoder(torch.nn.Module):
 
     def forward(self, t: Tensor) -> Tensor:
         return torch.exp(-self.lin(t.view(-1, 1)) ** 2)
+
+
+class TimeEncoderGM(torch.nn.Module):
+
+    def __init__(self, out_channels: int, parameter_requires_grad: bool = True):
+        """
+        Time encoder.
+        :param time_dim: int, dimension of time encodings
+        :param parameter_requires_grad: boolean, whether the parameter in TimeEncoder needs gradient
+        """
+        super().__init__()
+
+        self.out_channels = out_channels
+        # trainable parameters for time encoding
+        self.lin = Linear(1, out_channels)
+        self.lin.weight = Parameter(
+            (
+                torch.from_numpy(
+                    1 / 10 ** np.linspace(0, 9, out_channels, dtype=np.float32)
+                )
+            ).reshape(out_channels, -1)
+        )
+        self.lin.bias = Parameter(torch.zeros(out_channels))
+
+        if not parameter_requires_grad:
+            self.lin.weight.requires_grad = False
+            self.lin.bias.requires_grad = False
+
+    def reset_parameters(self):
+        self.lin.reset_parameters()
+
+    def forward(self, timestamps: torch.Tensor):
+        """
+        compute time encodings of time in timestamps
+        :param timestamps: Tensor, shape (batch_size, seq_len)
+        :return:
+        """
+        # Tensor, shape (batch_size, seq_len, 1)
+        timestamps = timestamps.view(-1, 1)
+
+        # Tensor, shape (batch_size, seq_len, time_dim)
+        output = torch.cos(self.lin(timestamps))
+
+        return output

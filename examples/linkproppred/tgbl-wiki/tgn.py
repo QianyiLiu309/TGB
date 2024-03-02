@@ -265,6 +265,7 @@ gnn = GraphAttentionEmbedding(
 link_pred = LinkPredictor(in_channels=EMB_DIM).to(device)
 
 model = {"memory": memory, "gnn": gnn, "link_pred": link_pred}
+print(model)
 
 optimizer = torch.optim.Adam(
     set(model["memory"].parameters())
