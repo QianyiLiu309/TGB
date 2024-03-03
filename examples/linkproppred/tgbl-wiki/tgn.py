@@ -97,6 +97,14 @@ def train():
         neg_out = model["link_pred"](z[assoc[src]], z[assoc[neg_dst]])
 
         loss = criterion(pos_out, torch.ones_like(pos_out))
+
+        # lambda_ = 0.005
+        # time_encoding_l2_norm = model["memory"].time_enc.get_parameter_norm()
+        # loss += lambda_ * time_encoding_l2_norm
+        # print(
+        #     f"Loss: {loss:.4f}, Time Encoding L2 Norm: {time_encoding_l2_norm:.4f}, After multiplying: {lambda_ * time_encoding_l2_norm:.4f}"
+        # )
+
         loss += criterion(neg_out, torch.zeros_like(neg_out))
 
         # Update memory and neighbor loader with ground-truth state.
