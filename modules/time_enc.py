@@ -112,3 +112,45 @@ class TimeEncoderGM(torch.nn.Module):
         output = torch.cos(self.lin(timestamps))
 
         return output
+
+
+class PartiallyLearnedTimeEncoder(torch.nn.Module):
+    def __init__(self, out_channels: int):
+        """
+        Time encoder.
+        :param time_dim: int, dimension of time encodings
+        :param parameter_requires_grad: boolean, whether the parameter in TimeEncoder needs gradient
+        """
+        super().__init__()
+
+        self.out_channels = out_channels
+        # trainable parameters for time encoding
+        self.lin = Linear(1, out_channels)
+        self.frequencies = torch.from_numpy(
+            1 / 10 ** np.linspace(-2, 7, out_channels, dtype=np.float32)
+        ).unsqueeze(0)
+
+        self.lin = Linear(1, out_channels, bias=True)
+
+    def reset_parameters(self):
+        self.lin.reset_parameters()
+
+    def forward(self, timestamps: torch.Tensor):
+        """
+        compute time encodings of time in timestamps
+        :param timestamps: Tensor, shape (batch_size, seq_len)
+        :return:
+        """
+        # Tensor, shape (batch_size, seq_len, 1)
+        timestamps = timestamps.view(-1, 1)
+
+        output = self.lin(timestamps)
+        if output.shape[0] != 0:
+            output = output * self.frequencies
+
+        output = torch.cos(output)
+
+        return output
+
+    def get_parameter_norm(self):
+        return torch.norm(self.lin.weight, p=2) + torch.norm(self.lin.bias, p=2)

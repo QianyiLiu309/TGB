@@ -20,6 +20,7 @@ from modules.time_enc import (
     ExpTimeEncoder,
     GaussianTimeEncoder,
     TimeEncoderGM,
+    PartiallyLearnedTimeEncoder,
 )
 
 
@@ -81,6 +82,8 @@ class TGNMemory(torch.nn.Module):
             self.time_enc = GaussianTimeEncoder(time_dim, mul=multiplier)
         elif time_encoder == "graph_mixer":
             self.time_enc = TimeEncoderGM(time_dim, parameter_requires_grad=False)
+        elif time_encoder == "partial":
+            self.time_enc = PartiallyLearnedTimeEncoder(time_dim)
 
         # self.gru = GRUCell(message_module.out_channels, memory_dim)
         if memory_updater_cell == "gru":  # for TGN
