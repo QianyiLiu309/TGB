@@ -125,10 +125,10 @@ class PartiallyLearnedTimeEncoder(torch.nn.Module):
 
         self.out_channels = out_channels
         # trainable parameters for time encoding
-        self.lin = Linear(1, out_channels)
-        self.frequencies = torch.from_numpy(
-            1 / 10 ** np.linspace(0, 9, out_channels, dtype=np.float32)
-        ).unsqueeze(0)
+        self.frequencies = Parameter(torch.from_numpy(
+            1 / 10 ** np.linspace(-2, 7, out_channels, dtype=np.float32)
+        ).unsqueeze(0))
+        self.frequencies.requires_grad = True
 
         self.lin = Linear(1, out_channels, bias=True)
 
