@@ -63,6 +63,8 @@ def train():
     model["memory"].reset_state()  # Start with a fresh memory.
     neighbor_loader.reset_state()  # Start with an empty graph.
 
+    print(f"Learned multipliers: {model['memory'].time_enc.mul}")
+
     total_loss = 0
     for batch in train_loader:
         batch = batch.to(device)
