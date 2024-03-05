@@ -15,13 +15,7 @@ from torch.nn import GRUCell, RNNCell, Linear
 from torch_geometric.nn.inits import zeros
 from torch_geometric.utils import scatter
 
-from modules.time_enc import (
-    TimeEncoder,
-    ExpTimeEncoder,
-    GaussianTimeEncoder,
-    TimeEncoderGM,
-    PartiallyLearnedTimeEncoder,
-)
+from modules.time_enc import get_time_encoder
 
 
 TGNMessageStoreType = Dict[int, Tuple[Tensor, Tensor, Tensor, Tensor]]
@@ -74,16 +68,7 @@ class TGNMemory(torch.nn.Module):
         self.msg_d_module = copy.deepcopy(message_module)
         self.aggr_module = aggregator_module
 
-        if time_encoder == "learned_cos":
-            self.time_enc = TimeEncoder(time_dim, mul=multiplier)
-        elif time_encoder == "learned_exp":
-            self.time_enc = ExpTimeEncoder(time_dim, mul=multiplier)
-        elif time_encoder == "learned_gaussian":
-            self.time_enc = GaussianTimeEncoder(time_dim, mul=multiplier)
-        elif time_encoder == "graph_mixer":
-            self.time_enc = TimeEncoderGM(time_dim, parameter_requires_grad=False)
-        elif time_encoder == "partial":
-            self.time_enc = PartiallyLearnedTimeEncoder(time_dim)
+        self.time_enc = get_time_encoder(time_encoder, out_channels=time_dim, mul=multiplier)
 
         # self.gru = GRUCell(message_module.out_channels, memory_dim)
         if memory_updater_cell == "gru":  # for TGN
