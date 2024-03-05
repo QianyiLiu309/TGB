@@ -46,6 +46,7 @@ class ExpTimeEncoder(torch.nn.Module):
 
 class GaussianTimeEncoder(torch.nn.Module):
     """Inspired by Gaussian PDF"""
+
     def __init__(self, out_channels: int, mul=1):
         super().__init__()
         self.out_channels = out_channels
@@ -115,10 +116,12 @@ class PartiallyLearnedTimeEncoder(torch.nn.Module):
 
         self.out_channels = out_channels
         # trainable parameters for time encoding
-        self.frequencies = Parameter(torch.from_numpy(
-            1 / 10 ** np.linspace(-2, 7, out_channels, dtype=np.float32)
-        ).unsqueeze(0))
-        self.frequencies.requires_grad = True
+        self.frequencies = Parameter(
+            torch.from_numpy(
+                1 / 10 ** np.linspace(-2, 7, out_channels, dtype=np.float32)
+            ).unsqueeze(0)
+        )
+        self.frequencies.requires_grad = False
 
         self.lin = Linear(1, out_channels, bias=True)
 
@@ -134,10 +137,10 @@ class PartiallyLearnedTimeEncoder(torch.nn.Module):
         # Tensor, shape (batch_size, seq_len, 1)
         timestamps = timestamps.view(-1, 1)
 
-        output = self.lin(timestamps)
+        output = torch.matmul(timestamps, self.lin.weight.t())
         if output.shape[0] != 0:
             output = output * self.frequencies
-
+        output = output + self.lin.bias
         output = torch.cos(output)
 
         return output
