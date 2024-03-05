@@ -97,6 +97,14 @@ def train():
         neg_out = model["link_pred"](z[assoc[src]], z[assoc[neg_dst]])
 
         loss = criterion(pos_out, torch.ones_like(pos_out))
+
+        # lambda_ = 0.005
+        # time_encoding_l2_norm = model["memory"].time_enc.get_parameter_norm()
+        # loss += lambda_ * time_encoding_l2_norm
+        # print(
+        #     f"Loss: {loss:.4f}, Time Encoding L2 Norm: {time_encoding_l2_norm:.4f}, After multiplying: {lambda_ * time_encoding_l2_norm:.4f}"
+        # )
+
         loss += criterion(neg_out, torch.zeros_like(neg_out))
 
         # Update memory and neighbor loader with ground-truth state.
@@ -211,6 +219,7 @@ PATIENCE = args.patience
 NUM_RUNS = args.num_run
 NUM_NEIGHBORS = 10
 TIME_ENCODER = args.time_encoder
+MULTIPLIER = args.mul
 
 
 MODEL_NAME = "TGN"
@@ -250,7 +259,8 @@ memory = TGNMemory(
     TIME_DIM,
     message_module=IdentityMessage(data.msg.size(-1), MEM_DIM, TIME_DIM),
     aggregator_module=LastAggregator(),
-    time_encoder=TIME_ENCODER
+    time_encoder=TIME_ENCODER,
+    multiplier=MULTIPLIER,
 ).to(device)
 
 gnn = GraphAttentionEmbedding(
@@ -263,6 +273,7 @@ gnn = GraphAttentionEmbedding(
 link_pred = LinkPredictor(in_channels=EMB_DIM).to(device)
 
 model = {"memory": memory, "gnn": gnn, "link_pred": link_pred}
+print(model)
 
 optimizer = torch.optim.Adam(
     set(model["memory"].parameters())

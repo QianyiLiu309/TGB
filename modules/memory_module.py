@@ -5,7 +5,6 @@ Reference:
     - https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/nn/models/tgn.html
 """
 
-
 import copy
 from typing import Callable, Dict, Tuple
 
@@ -16,7 +15,13 @@ from torch.nn import GRUCell, RNNCell, Linear
 from torch_geometric.nn.inits import zeros
 from torch_geometric.utils import scatter
 
-from modules.time_enc import TimeEncoder, ExpTimeEncoder, GaussianTimeEncoder
+from modules.time_enc import (
+    TimeEncoder,
+    ExpTimeEncoder,
+    GaussianTimeEncoder,
+    TimeEncoderGM,
+    PartiallyLearnedTimeEncoder,
+)
 
 
 TGNMessageStoreType = Dict[int, Tuple[Tensor, Tensor, Tensor, Tensor]]
@@ -56,6 +61,7 @@ class TGNMemory(torch.nn.Module):
         aggregator_module: Callable,
         memory_updater_cell: str = "gru",
         time_encoder: str = "learned_cos",
+        multiplier: float = 1.0,
     ):
         super().__init__()
 
@@ -69,11 +75,15 @@ class TGNMemory(torch.nn.Module):
         self.aggr_module = aggregator_module
 
         if time_encoder == "learned_cos":
-            self.time_enc = TimeEncoder(time_dim)
+            self.time_enc = TimeEncoder(time_dim, mul=multiplier)
         elif time_encoder == "learned_exp":
-            self.time_enc = ExpTimeEncoder(time_dim)
+            self.time_enc = ExpTimeEncoder(time_dim, mul=multiplier)
         elif time_encoder == "learned_gaussian":
-            self.time_enc = GaussianTimeEncoder(time_dim)
+            self.time_enc = GaussianTimeEncoder(time_dim, mul=multiplier)
+        elif time_encoder == "graph_mixer":
+            self.time_enc = TimeEncoderGM(time_dim, parameter_requires_grad=False)
+        elif time_encoder == "partial":
+            self.time_enc = PartiallyLearnedTimeEncoder(time_dim)
 
         # self.gru = GRUCell(message_module.out_channels, memory_dim)
         if memory_updater_cell == "gru":  # for TGN
@@ -242,15 +252,24 @@ class DyRepMemory(torch.nn.Module):
             which aggregates messages to the same destination into a single
             representation.
         memory_updater_type (str): specifies whether the memory updater is GRU or RNN
-        use_src_emb_in_msg (bool): whether to use the source embeddings 
+        use_src_emb_in_msg (bool): whether to use the source embeddings
             in generation of messages
-        use_dst_emb_in_msg (bool): whether to use the destination embeddings 
+        use_dst_emb_in_msg (bool): whether to use the destination embeddings
             in generation of messages
     """
-    def __init__(self, num_nodes: int, raw_msg_dim: int, memory_dim: int,
-                 time_dim: int, message_module: Callable,
-                 aggregator_module: Callable, memory_updater_type: str,
-                 use_src_emb_in_msg: bool = False, use_dst_emb_in_msg: bool = False):
+
+    def __init__(
+        self,
+        num_nodes: int,
+        raw_msg_dim: int,
+        memory_dim: int,
+        time_dim: int,
+        message_module: Callable,
+        aggregator_module: Callable,
+        memory_updater_type: str,
+        use_src_emb_in_msg: bool = False,
+        use_dst_emb_in_msg: bool = False,
+    ):
         super().__init__()
 
         self.num_nodes = num_nodes
@@ -263,22 +282,26 @@ class DyRepMemory(torch.nn.Module):
         self.aggr_module = aggregator_module
         self.time_enc = TimeEncoder(time_dim)
 
-        assert memory_updater_type in ['gru', 'rnn'], "Memor updater can be either `rnn` or `gru`."
-        if memory_updater_type == 'gru':  # for TGN
+        assert memory_updater_type in [
+            "gru",
+            "rnn",
+        ], "Memor updater can be either `rnn` or `gru`."
+        if memory_updater_type == "gru":  # for TGN
             self.memory_updater = GRUCell(message_module.out_channels, memory_dim)
-        elif memory_updater_type == 'rnn':  # for JODIE & DyRep
+        elif memory_updater_type == "rnn":  # for JODIE & DyRep
             self.memory_updater = RNNCell(message_module.out_channels, memory_dim)
         else:
-            raise ValueError("Undefined memory updater!!! Memory updater can be either 'gru' or 'rnn'.")
-        
+            raise ValueError(
+                "Undefined memory updater!!! Memory updater can be either 'gru' or 'rnn'."
+            )
+
         self.use_src_emb_in_msg = use_src_emb_in_msg
         self.use_dst_emb_in_msg = use_dst_emb_in_msg
 
-        self.register_buffer('memory', torch.empty(num_nodes, memory_dim))
+        self.register_buffer("memory", torch.empty(num_nodes, memory_dim))
         last_update = torch.empty(self.num_nodes, dtype=torch.long)
-        self.register_buffer('last_update', last_update)
-        self.register_buffer('_assoc', torch.empty(num_nodes,
-                                                   dtype=torch.long))
+        self.register_buffer("last_update", last_update)
+        self.register_buffer("_assoc", torch.empty(num_nodes, dtype=torch.long))
 
         self.msg_s_store = {}
         self.msg_d_store = {}
@@ -291,11 +314,11 @@ class DyRepMemory(torch.nn.Module):
 
     def reset_parameters(self):
         r"""Resets all learnable parameters of the module."""
-        if hasattr(self.msg_s_module, 'reset_parameters'):
+        if hasattr(self.msg_s_module, "reset_parameters"):
             self.msg_s_module.reset_parameters()
-        if hasattr(self.msg_d_module, 'reset_parameters'):
+        if hasattr(self.msg_d_module, "reset_parameters"):
             self.msg_d_module.reset_parameters()
-        if hasattr(self.aggr_module, 'reset_parameters'):
+        if hasattr(self.aggr_module, "reset_parameters"):
             self.aggr_module.reset_parameters()
         self.time_enc.reset_parameters()
         self.memory_updater.reset_parameters()
@@ -321,12 +344,19 @@ class DyRepMemory(torch.nn.Module):
 
         return memory, last_update
 
-    def update_state(self, src: Tensor, dst: Tensor, t: Tensor, raw_msg: Tensor, 
-                     embeddings: Tensor = None, assoc: Tensor = None):
+    def update_state(
+        self,
+        src: Tensor,
+        dst: Tensor,
+        t: Tensor,
+        raw_msg: Tensor,
+        embeddings: Tensor = None,
+        assoc: Tensor = None,
+    ):
         """Updates the memory with newly encountered interactions
         :obj:`(src, dst, t, raw_msg)`."""
         n_id = torch.cat([src, dst]).unique()
-        
+
         if self.training:
             self._update_memory(n_id, embeddings, assoc)
             self._update_msg_store(src, dst, t, raw_msg, self.msg_s_store)
@@ -337,27 +367,33 @@ class DyRepMemory(torch.nn.Module):
             self._update_memory(n_id, embeddings, assoc)
 
     def _reset_message_store(self):
-        i = self.memory.new_empty((0, ), device=self.device, dtype=torch.long)
+        i = self.memory.new_empty((0,), device=self.device, dtype=torch.long)
         msg = self.memory.new_empty((0, self.raw_msg_dim), device=self.device)
         # Message store format: (src, dst, t, msg)
         self.msg_s_store = {j: (i, i, i, msg) for j in range(self.num_nodes)}
         self.msg_d_store = {j: (i, i, i, msg) for j in range(self.num_nodes)}
 
-    def _update_memory(self, n_id: Tensor, embeddings: Tensor = None, assoc: Tensor = None):
+    def _update_memory(
+        self, n_id: Tensor, embeddings: Tensor = None, assoc: Tensor = None
+    ):
         memory, last_update = self._get_updated_memory(n_id, embeddings, assoc)
         self.memory[n_id] = memory
         self.last_update[n_id] = last_update
 
-    def _get_updated_memory(self, n_id: Tensor, embeddings: Tensor = None, assoc: Tensor = None) -> Tuple[Tensor, Tensor]:
+    def _get_updated_memory(
+        self, n_id: Tensor, embeddings: Tensor = None, assoc: Tensor = None
+    ) -> Tuple[Tensor, Tensor]:
         self._assoc[n_id] = torch.arange(n_id.size(0), device=n_id.device)
 
         # Compute messages (src -> dst).
-        msg_s, t_s, src_s, dst_s = self._compute_msg(n_id, self.msg_s_store,
-                                                     self.msg_s_module, embeddings, assoc)                                          
+        msg_s, t_s, src_s, dst_s = self._compute_msg(
+            n_id, self.msg_s_store, self.msg_s_module, embeddings, assoc
+        )
 
         # Compute messages (dst -> src).
-        msg_d, t_d, src_d, dst_d = self._compute_msg(n_id, self.msg_d_store,
-                                                     self.msg_d_module, embeddings, assoc)
+        msg_d, t_d, src_d, dst_d = self._compute_msg(
+            n_id, self.msg_d_store, self.msg_d_module, embeddings, assoc
+        )
 
         # Aggregate messages.
         idx = torch.cat([src_s, src_d], dim=0)
@@ -370,19 +406,31 @@ class DyRepMemory(torch.nn.Module):
 
         # Get local copy of updated `last_update`.
         dim_size = self.last_update.size(0)
-        last_update = scatter(t, idx, 0, dim_size, reduce='max')[n_id]
+        last_update = scatter(t, idx, 0, dim_size, reduce="max")[n_id]
 
         return memory, last_update
 
-    def _update_msg_store(self, src: Tensor, dst: Tensor, t: Tensor,
-                          raw_msg: Tensor, msg_store: TGNMessageStoreType):
+    def _update_msg_store(
+        self,
+        src: Tensor,
+        dst: Tensor,
+        t: Tensor,
+        raw_msg: Tensor,
+        msg_store: TGNMessageStoreType,
+    ):
         n_id, perm = src.sort()
         n_id, count = n_id.unique_consecutive(return_counts=True)
         for i, idx in zip(n_id.tolist(), perm.split(count.tolist())):
             msg_store[i] = (src[idx], dst[idx], t[idx], raw_msg[idx])
 
-    def _compute_msg(self, n_id: Tensor, msg_store: TGNMessageStoreType, msg_module: Callable, 
-                     embeddings: Tensor = None, assoc: Tensor = None):
+    def _compute_msg(
+        self,
+        n_id: Tensor,
+        msg_store: TGNMessageStoreType,
+        msg_module: Callable,
+        embeddings: Tensor = None,
+        assoc: Tensor = None,
+    ):
         data = [msg_store[i] for i in n_id.tolist()]
         src, dst, t, raw_msg = list(zip(*data))
         src = torch.cat(src, dim=0)
@@ -414,7 +462,7 @@ class DyRepMemory(torch.nn.Module):
                         curr_dst.append(d.item())
                         curr_dst_idx.append(d_idx)
                 destination_memory[curr_dst_idx] = embeddings[assoc[curr_dst]]
-            
+
         msg = msg_module(source_memory, destination_memory, raw_msg, t_enc)
 
         return msg, t, src, dst
@@ -423,7 +471,6 @@ class DyRepMemory(torch.nn.Module):
         """Sets the module in training mode."""
         if self.training and not mode:
             # Flush message store to memory in case we just entered eval mode.
-            self._update_memory(
-                torch.arange(self.num_nodes, device=self.memory.device))
+            self._update_memory(torch.arange(self.num_nodes, device=self.memory.device))
             self._reset_message_store()
         super().train(mode)

@@ -42,13 +42,13 @@ from tgb.linkproppred.dataset_pyg import PyGLinkPropPredDataset
 
 from matplotlib import pyplot as plt
 import pickle
-import tqdm
+from tqdm import tqdm
 
 from plot_utils import (
     get_temporal_edge_times,
     calculate_average_step_difference,
     calculate_average_step_difference_full_range,
-    total_variation_per_unit_time
+    total_variation_per_unit_time,
 )
 
 # ==========
@@ -75,8 +75,10 @@ def train():
     model["memory"].reset_state()  # Start with a fresh memory.
     neighbor_loader.reset_state()  # Start with an empty graph.
 
-    for batch in tqdm.tqdm(train_loader):
+    total_loss = 0
+    for batch in train_loader:
         batch = batch.to(device)
+        optimizer.zero_grad()
 
         src, pos_dst, t, msg = batch.src, batch.dst, batch.t, batch.msg
 
@@ -103,11 +105,22 @@ def train():
             data.msg[e_id].to(device),
         )
 
+        pos_out = model["link_pred"](z[assoc[src]], z[assoc[pos_dst]])
+        neg_out = model["link_pred"](z[assoc[src]], z[assoc[neg_dst]])
+
+        loss = criterion(pos_out, torch.ones_like(pos_out))
+        loss += criterion(neg_out, torch.zeros_like(neg_out))
+
         # Update memory and neighbor loader with ground-truth state.
         model["memory"].update_state(src, pos_dst, t, msg)
         neighbor_loader.insert(src, pos_dst)
 
+        loss.backward()
+        optimizer.step()
         model["memory"].detach()
+        total_loss += float(loss) * batch.num_events
+
+    return total_loss / train_data.num_events
 
 
 @torch.no_grad()
@@ -127,7 +140,7 @@ def valid(loader):
     model["gnn"].eval()
     model["link_pred"].eval()
 
-    for pos_batch in tqdm.tqdm(loader):
+    for pos_batch in tqdm(loader):
         pos_src, pos_dst, pos_t, pos_msg = (
             pos_batch.src,
             pos_batch.dst,
@@ -138,6 +151,80 @@ def valid(loader):
         # Update memory and neighbor loader with ground-truth state.
         model["memory"].update_state(pos_src, pos_dst, pos_t, pos_msg)
         neighbor_loader.insert(pos_src, pos_dst)
+
+
+@torch.no_grad()
+def real_test(loader, neg_sampler, split_mode):
+    r"""
+    Evaluated the dynamic link prediction
+    Evaluation happens as 'one vs. many', meaning that each positive edge is evaluated against many negative edges
+
+    Parameters:
+        loader: an object containing positive attributes of the positive edges of the evaluation set
+        neg_sampler: an object that gives the negative edges corresponding to each positive edge
+        split_mode: specifies whether it is the 'validation' or 'test' set to correctly load the negatives
+    Returns:
+        perf_metric: the result of the performance evaluaiton
+    """
+    model["memory"].eval()
+    model["gnn"].eval()
+    model["link_pred"].eval()
+
+    perf_list = []
+
+    for pos_batch in tqdm(loader):
+        pos_src, pos_dst, pos_t, pos_msg = (
+            pos_batch.src,
+            pos_batch.dst,
+            pos_batch.t,
+            pos_batch.msg,
+        )
+
+        neg_batch_list = neg_sampler.query_batch(
+            pos_src, pos_dst, pos_t, split_mode=split_mode
+        )
+
+        for idx, neg_batch in enumerate(neg_batch_list):
+            src = torch.full((1 + len(neg_batch),), pos_src[idx], device=device)
+            dst = torch.tensor(
+                np.concatenate(
+                    ([np.array([pos_dst.cpu().numpy()[idx]]), np.array(neg_batch)]),
+                    axis=0,
+                ),
+                device=device,
+            )
+
+            n_id = torch.cat([src, dst]).unique()
+            n_id, edge_index, e_id = neighbor_loader(n_id)
+            assoc[n_id] = torch.arange(n_id.size(0), device=device)
+
+            # Get updated memory of all nodes involved in the computation.
+            z, last_update = model["memory"](n_id)
+            z = model["gnn"](
+                z,
+                last_update,
+                edge_index,
+                data.t[e_id].to(device),
+                data.msg[e_id].to(device),
+            )
+
+            y_pred = model["link_pred"](z[assoc[src]], z[assoc[dst]])
+
+            # compute MRR
+            input_dict = {
+                "y_pred_pos": np.array([y_pred[0, :].squeeze(dim=-1).cpu()]),
+                "y_pred_neg": np.array(y_pred[1:, :].squeeze(dim=-1).cpu()),
+                "eval_metric": [metric],
+            }
+            perf_list.append(evaluator.eval(input_dict)[metric])
+
+        # Update memory and neighbor loader with ground-truth state.
+        model["memory"].update_state(pos_src, pos_dst, pos_t, pos_msg)
+        neighbor_loader.insert(pos_src, pos_dst)
+
+    perf_metrics = float(torch.tensor(perf_list).mean())
+
+    return perf_metrics
 
 
 @torch.no_grad()
@@ -225,7 +312,7 @@ def test(
 
     relevant_edge_indices = set()
 
-    for pos_batch in tqdm.tqdm(loader):
+    for pos_batch in tqdm(loader):
         pos_src, pos_dst, pos_t, pos_msg = (
             pos_batch.src,
             pos_batch.dst,
@@ -333,9 +420,12 @@ PATIENCE = args.patience
 NUM_RUNS = args.num_run
 NUM_NEIGHBORS = 10
 TIME_ENCODER = args.time_encoder
+MULTIPLIER = args.mul
 
 
 MODEL_NAME = "TGN"
+
+DO_REAL_TEST = False
 # ==========
 
 # set the device
@@ -377,7 +467,9 @@ for i in range(100, len(biggest), 50):
 
     time_range = test_data["t"].max() - test_data["t"].min()
 
-    lower_bound = int(test_data["t"].min())  # can't extend backwards without clashing with val/train
+    lower_bound = int(
+        test_data["t"].min()
+    )  # can't extend backwards without clashing with val/train
     upper_bound = int(test_data["t"].max() + time_range * 0.2)
 
     # step = (upper_bound - lower_bound) // n_bins
@@ -418,6 +510,7 @@ for i in range(100, len(biggest), 50):
         message_module=IdentityMessage(data.msg.size(-1), MEM_DIM, TIME_DIM),
         aggregator_module=LastAggregator(),
         time_encoder=TIME_ENCODER,
+        multiplier=MULTIPLIER,
     ).to(device)
 
     gnn = GraphAttentionEmbedding(
@@ -430,6 +523,15 @@ for i in range(100, len(biggest), 50):
     link_pred = LinkPredictor(in_channels=EMB_DIM).to(device)
 
     model = {"memory": memory, "gnn": gnn, "link_pred": link_pred}
+    print(model)
+
+    optimizer = torch.optim.Adam(
+        set(model["memory"].parameters())
+        | set(model["gnn"].parameters())
+        | set(model["link_pred"].parameters()),
+        lr=LR,
+    )
+    criterion = torch.nn.BCEWithLogitsLoss()
 
     # Helper vector to map global node indices to local ones.
     assoc = torch.empty(data.num_nodes, dtype=torch.long, device=device)
@@ -476,10 +578,16 @@ for i in range(100, len(biggest), 50):
 
         # second, update memory and neighbor_loader with data from train and validation set
         train()
+        dataset.load_val_ns()
         valid(val_loader)
+        # real_test(val_loader, neg_sampler, split_mode="val")
 
         # loading the test negative samples
         dataset.load_test_ns()
+        early_stopper.load_checkpoint(model)
+        if DO_REAL_TEST:
+            perf_metric_test = real_test(test_loader, neg_sampler, split_mode="test")
+            print(f"Performance metric on test dataset: {perf_metric_test}")
 
         # final testing
         start_test = timeit.default_timer()
@@ -522,8 +630,11 @@ for i in range(100, len(biggest), 50):
             )
 
             for hop_threshold in range(4):
-                totvar, totvar_per_sec = total_variation_per_unit_time([hop0, hop1, hop2][:hop_threshold], prediction_results[1],
-                                                       prediction_results[0])
+                totvar, totvar_per_sec = total_variation_per_unit_time(
+                    [hop0, hop1, hop2][:hop_threshold],
+                    prediction_results[1],
+                    prediction_results[0],
+                )
 
                 print(f"TotalVar-{hop_threshold} = {totvar}")
                 print(f"TotalVar/s-{hop_threshold} = {totvar_per_sec}")
@@ -581,16 +692,6 @@ for i in range(100, len(biggest), 50):
 
             for etime in hop2:
                 plt.axvline(x=etime, color="C3", ls="--", linewidth=1.0, alpha=1.0)
-
-            # for etime in two_hop_neighbor_timestamp:
-            #     assert etime not in prediction_results[2]
-            #     plt.axvline(x=etime, color="blue", ls="--", linewidth=1.0, alpha=1.0)
-
-            # for etime in prediction_results[3]:
-            #     plt.axvline(x=etime, color="green", ls="--", linewidth=1.0, alpha=1.0)
-
-            # for etime in prediction_results[2]:
-            #     plt.axvline(x=etime, color="red", ls="--", linewidth=1.0, alpha=1.0)
 
             plt.show()
 
