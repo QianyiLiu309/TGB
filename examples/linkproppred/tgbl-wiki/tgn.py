@@ -226,7 +226,7 @@ MODEL_NAME = "TGN"
 # ==========
 
 # set the device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 
 # data loading
 dataset = PyGLinkPropPredDataset(name=DATA, root="datasets")
