@@ -375,7 +375,7 @@ tgn_results = {}
 
 run_all = False
 
-for i in range(100, len(biggest), 50):
+for i in range(100, len(biggest), 200):
     target_src, target_dst = biggest[i]
     count = counts[(target_src, target_dst)]
     if count == 1:
@@ -471,7 +471,9 @@ for i in range(100, len(biggest), 50):
 
         # define an early stopper
         save_model_dir = f"{osp.dirname(osp.abspath(__file__))}/saved_models/"
-        save_model_id = f"{MODEL_NAME}_{DATA}_{SEED}_{run_idx}"
+        save_model_id = (
+            f"{MODEL_NAME}_{DATA}_{SEED}_{run_idx}_{TIME_ENCODER}_{MULTIPLIER}"
+        )
         early_stopper = EarlyStopMonitor(
             save_model_dir=save_model_dir,
             save_model_id=save_model_id,
