@@ -227,6 +227,9 @@ MODEL_NAME = "TGN"
 
 for run_idx in range(NUM_RUNS):
     # ==========
+    # set the seed for deterministic results...
+    torch.manual_seed(run_idx + SEED)
+    set_random_seed(run_idx + SEED)
 
     # set the device
     device = torch.device("cpu")
@@ -311,10 +314,6 @@ for run_idx in range(NUM_RUNS):
     )
     print(f"INFO: >>>>> Run: {run_idx} <<<<<")
     start_run = timeit.default_timer()
-
-    # set the seed for deterministic results...
-    torch.manual_seed(run_idx + SEED)
-    set_random_seed(run_idx + SEED)
 
     # define an early stopper
     save_model_dir = f"{osp.dirname(osp.abspath(__file__))}/saved_models/"
