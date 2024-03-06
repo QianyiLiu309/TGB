@@ -56,90 +56,9 @@ from plot_utils import (
 # ==========
 
 
-def train():
-    r"""
-    Training procedure for TGN model
-    This function uses some objects that are globally defined in the current scrips
-
-    Parameters:
-        None
-    Returns:
-        None
-
-    """
-
-    model["memory"].train()
-    model["gnn"].train()
-    model["link_pred"].train()
-
-    model["memory"].reset_state()  # Start with a fresh memory.
-    neighbor_loader.reset_state()  # Start with an empty graph.
-
-    total_loss = 0
-    for batch in train_loader:
-        batch = batch.to(device)
-        optimizer.zero_grad()
-
-        src, pos_dst, t, msg = batch.src, batch.dst, batch.t, batch.msg
-
-        # Sample negative destination nodes.
-        neg_dst = torch.randint(
-            min_dst_idx,
-            max_dst_idx + 1,
-            (src.size(0),),
-            dtype=torch.long,
-            device=device,
-        )
-
-        n_id = torch.cat([src, pos_dst, neg_dst]).unique()
-        n_id, edge_index, e_id = neighbor_loader(n_id)
-        assoc[n_id] = torch.arange(n_id.size(0), device=device)
-
-        # Get updated memory of all nodes involved in the computation.
-        z, last_update = model["memory"](n_id)
-        z = model["gnn"](
-            z,
-            last_update,
-            edge_index,
-            data.t[e_id].to(device),
-            data.msg[e_id].to(device),
-        )
-
-        pos_out = model["link_pred"](z[assoc[src]], z[assoc[pos_dst]])
-        neg_out = model["link_pred"](z[assoc[src]], z[assoc[neg_dst]])
-
-        loss = criterion(pos_out, torch.ones_like(pos_out))
-        loss += criterion(neg_out, torch.zeros_like(neg_out))
-
-        # Update memory and neighbor loader with ground-truth state.
-        model["memory"].update_state(src, pos_dst, t, msg)
-        neighbor_loader.insert(src, pos_dst)
-
-        loss.backward()
-        optimizer.step()
-        model["memory"].detach()
-        total_loss += float(loss) * batch.num_events
-
-    return total_loss / train_data.num_events
-
-
 @torch.no_grad()
-def valid(loader):
-    r"""
-    Evaluated the dynamic link prediction
-    Evaluation happens as 'one vs. many', meaning that each positive edge is evaluated against many negative edges
-
-    Parameters:
-        loader: an object containing positive attributes of the positive edges of the evaluation set
-        neg_sampler: an object that gives the negative edges corresponding to each positive edge
-        split_mode: specifies whether it is the 'validation' or 'test' set to correctly load the negatives
-    Returns:
-        perf_metric: the result of the performance evaluaiton
-    """
-    model["memory"].eval()
-    model["gnn"].eval()
-    model["link_pred"].eval()
-
+def process_split(loader):
+    """Just adds the split to memory and neighbour_loader. Shared between train() and val()."""
     for pos_batch in tqdm(loader):
         pos_src, pos_dst, pos_t, pos_msg = (
             pos_batch.src,
@@ -151,6 +70,7 @@ def valid(loader):
         # Update memory and neighbor loader with ground-truth state.
         model["memory"].update_state(pos_src, pos_dst, pos_t, pos_msg)
         neighbor_loader.insert(pos_src, pos_dst)
+        model["memory"].detach()
 
 
 @torch.no_grad()
@@ -425,7 +345,7 @@ MULTIPLIER = args.mul
 
 MODEL_NAME = "TGN"
 
-DO_REAL_TEST = False
+DO_REAL_TEST = True
 # ==========
 
 # set the device
@@ -482,11 +402,6 @@ for i in range(100, len(biggest), 50):
         additional_negative_edges.append((target_src, target_dst, i))
         i += step
     print(f"Number of additional negative edges: {len(additional_negative_edges)}")
-    # print(f"Length of additional negative edges: {len(additional_negative_edges)}")
-    # print(f"First element of additional negative edges: {additional_negative_edges[0]}")
-    # print(
-    #     f"Second element of additional negative edges: {additional_negative_edges[1]}"
-    # )
 
     # Small batch size unimportant for train/val
     train_loader = TemporalDataLoader(train_data, batch_size=200)
@@ -524,14 +439,6 @@ for i in range(100, len(biggest), 50):
 
     model = {"memory": memory, "gnn": gnn, "link_pred": link_pred}
     print(model)
-
-    optimizer = torch.optim.Adam(
-        set(model["memory"].parameters())
-        | set(model["gnn"].parameters())
-        | set(model["link_pred"].parameters()),
-        lr=LR,
-    )
-    criterion = torch.nn.BCEWithLogitsLoss()
 
     # Helper vector to map global node indices to local ones.
     assoc = torch.empty(data.num_nodes, dtype=torch.long, device=device)
@@ -576,11 +483,15 @@ for i in range(100, len(biggest), 50):
         # first, load the best model
         early_stopper.load_checkpoint(model)
 
-        # second, update memory and neighbor_loader with data from train and validation set
-        train()
-        dataset.load_val_ns()
-        valid(val_loader)
-        # real_test(val_loader, neg_sampler, split_mode="val")
+        model["memory"].reset_state()  # Start with a fresh memory.
+        neighbor_loader.reset_state()  # Start with an empty graph.
+
+        model["memory"].eval()
+        model["gnn"].eval()
+        model["link_pred"].eval()
+
+        process_split(train_loader)
+        process_split(val_loader)
 
         # loading the test negative samples
         dataset.load_test_ns()
@@ -608,22 +519,6 @@ for i in range(100, len(biggest), 50):
 
             one_hop_neighbor_timestamp_set = set(prediction_results[3])
             event_timestamp_set = set(prediction_results[2])
-            print(event_timestamp_set)
-
-            two_hop_neighbor_timestamp = []
-            for index in prediction_results[4]:
-                # print(f"Index: {index}")
-                timestamp = data.t[index]
-                # print(f"Timestamp: {timestamp}")
-                if (
-                    timestamp not in one_hop_neighbor_timestamp_set
-                    and timestamp not in event_timestamp_set
-                ):
-                    two_hop_neighbor_timestamp.append(timestamp)
-
-            print(
-                f"Number of two-hop neighbor events: {len(two_hop_neighbor_timestamp)}"
-            )
 
             hop0, hop1, hop2 = get_temporal_edge_times(
                 dataset, target_src, target_dst, 2, mask=test_mask
@@ -638,37 +533,6 @@ for i in range(100, len(biggest), 50):
 
                 print(f"TotalVar-{hop_threshold} = {totvar}")
                 print(f"TotalVar/s-{hop_threshold} = {totvar_per_sec}")
-
-            for hop_threshold in range(3):
-                print(
-                    "Ignoring events:",
-                    np.mean(
-                        np.abs(prediction_results[1][1:] - prediction_results[1][:-1])
-                    ),
-                )
-
-                average_step_difference = calculate_average_step_difference(
-                    timestamps_by_hops=[hop0, hop1, hop2],
-                    preds=prediction_results[1],
-                    pred_timestamps=prediction_results[0],
-                    hop_threshold=hop_threshold,
-                )
-                print(
-                    f"Average step difference for hop {hop_threshold}: {average_step_difference}"
-                )
-
-                average_step_difference_full_range = (
-                    calculate_average_step_difference_full_range(
-                        timestamps_by_hops=[hop0, hop1, hop2],
-                        preds=prediction_results[1],
-                        pred_timestamps=prediction_results[0],
-                        hop_threshold=hop_threshold,
-                    )
-                )
-                print(
-                    f"Average step difference for the full range: {average_step_difference_full_range}"
-                )
-                print("\n")
 
             print(f"Length of hop0: {len(hop0)}")
             print(f"Length of hop1: {len(hop1)}")
