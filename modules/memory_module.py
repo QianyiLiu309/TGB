@@ -201,7 +201,11 @@ class TGNMemory(torch.nn.Module):
         src = torch.cat(src, dim=0)
         dst = torch.cat(dst, dim=0)
         t = torch.cat(t, dim=0)
-        raw_msg = torch.cat(raw_msg, dim=0)
+        nonempty_msg = [i for i in raw_msg if i.shape[0] > 0]
+        if len(nonempty_msg) > 0:
+            raw_msg = torch.cat(nonempty_msg, dim=0)
+        else:
+            raw_msg = raw_msg[0]  # all messages are empty so just take the first one
         t_rel = t - self.last_update[src]
         t_enc = self.time_enc(t_rel.to(raw_msg.dtype))
 
