@@ -9,6 +9,7 @@ command for an example run:
 
 import math
 import timeit
+import random
 
 import os
 import os.path as osp
@@ -223,86 +224,88 @@ MULTIPLIER = args.mul
 
 
 MODEL_NAME = "TGN"
-# ==========
-
-# set the device
-device = torch.device("cpu")
-
-# data loading
-dataset = PyGLinkPropPredDataset(name=DATA, root="datasets")
-train_mask = dataset.train_mask
-val_mask = dataset.val_mask
-test_mask = dataset.test_mask
-data = dataset.get_TemporalData()
-data = data.to(device)
-metric = dataset.eval_metric
-
-train_data = data[train_mask]
-val_data = data[val_mask]
-test_data = data[test_mask]
-
-train_loader = TemporalDataLoader(train_data, batch_size=BATCH_SIZE)
-val_loader = TemporalDataLoader(val_data, batch_size=BATCH_SIZE)
-test_loader = TemporalDataLoader(test_data, batch_size=BATCH_SIZE)
-
-# Ensure to only sample actual destination nodes as negatives.
-min_dst_idx, max_dst_idx = int(data.dst.min()), int(data.dst.max())
-
-# neighhorhood sampler
-neighbor_loader = LastNeighborLoader(data.num_nodes, size=NUM_NEIGHBORS, device=device)
-
-# define the model end-to-end
-memory = TGNMemory(
-    data.num_nodes,
-    data.msg.size(-1),
-    MEM_DIM,
-    TIME_DIM,
-    message_module=IdentityMessage(data.msg.size(-1), MEM_DIM, TIME_DIM),
-    aggregator_module=LastAggregator(),
-    time_encoder=TIME_ENCODER,
-    multiplier=MULTIPLIER,
-).to(device)
-
-gnn = GraphAttentionEmbedding(
-    in_channels=MEM_DIM,
-    out_channels=EMB_DIM,
-    msg_dim=data.msg.size(-1),
-    time_enc=memory.time_enc,
-).to(device)
-
-link_pred = LinkPredictor(in_channels=EMB_DIM).to(device)
-
-model = {"memory": memory, "gnn": gnn, "link_pred": link_pred}
-print(model)
-
-optimizer = torch.optim.Adam(
-    set(model["memory"].parameters())
-    | set(model["gnn"].parameters())
-    | set(model["link_pred"].parameters()),
-    lr=LR,
-)
-criterion = torch.nn.BCEWithLogitsLoss()
-
-# Helper vector to map global node indices to local ones.
-assoc = torch.empty(data.num_nodes, dtype=torch.long, device=device)
-
-
-print("==========================================================")
-print(f"=================*** {MODEL_NAME}: LinkPropPred: {DATA} ***=============")
-print("==========================================================")
-
-evaluator = Evaluator(name=DATA)
-neg_sampler = dataset.negative_sampler
-
-# for saving the results...
-results_path = f"{osp.dirname(osp.abspath(__file__))}/saved_results"
-if not osp.exists(results_path):
-    os.mkdir(results_path)
-    print("INFO: Create directory {}".format(results_path))
-Path(results_path).mkdir(parents=True, exist_ok=True)
-results_filename = f"{results_path}/{MODEL_NAME}_{DATA}_results.json"
 
 for run_idx in range(NUM_RUNS):
+    # ==========
+
+    # set the device
+    device = torch.device("cpu")
+
+    # data loading
+    dataset = PyGLinkPropPredDataset(name=DATA, root="datasets")
+    train_mask = dataset.train_mask
+    val_mask = dataset.val_mask
+    test_mask = dataset.test_mask
+    data = dataset.get_TemporalData()
+    data = data.to(device)
+    metric = dataset.eval_metric
+
+    train_data = data[train_mask]
+    val_data = data[val_mask]
+    test_data = data[test_mask]
+
+    train_loader = TemporalDataLoader(train_data, batch_size=BATCH_SIZE)
+    val_loader = TemporalDataLoader(val_data, batch_size=BATCH_SIZE)
+    test_loader = TemporalDataLoader(test_data, batch_size=BATCH_SIZE)
+
+    # Ensure to only sample actual destination nodes as negatives.
+    min_dst_idx, max_dst_idx = int(data.dst.min()), int(data.dst.max())
+
+    # neighhorhood sampler
+    neighbor_loader = LastNeighborLoader(
+        data.num_nodes, size=NUM_NEIGHBORS, device=device
+    )
+
+    # define the model end-to-end
+    memory = TGNMemory(
+        data.num_nodes,
+        data.msg.size(-1),
+        MEM_DIM,
+        TIME_DIM,
+        message_module=IdentityMessage(data.msg.size(-1), MEM_DIM, TIME_DIM),
+        aggregator_module=LastAggregator(),
+        time_encoder=TIME_ENCODER,
+        multiplier=MULTIPLIER,
+    ).to(device)
+
+    gnn = GraphAttentionEmbedding(
+        in_channels=MEM_DIM,
+        out_channels=EMB_DIM,
+        msg_dim=data.msg.size(-1),
+        time_enc=memory.time_enc,
+    ).to(device)
+
+    link_pred = LinkPredictor(in_channels=EMB_DIM).to(device)
+
+    model = {"memory": memory, "gnn": gnn, "link_pred": link_pred}
+    print(model)
+
+    optimizer = torch.optim.Adam(
+        set(model["memory"].parameters())
+        | set(model["gnn"].parameters())
+        | set(model["link_pred"].parameters()),
+        lr=LR,
+    )
+    criterion = torch.nn.BCEWithLogitsLoss()
+
+    # Helper vector to map global node indices to local ones.
+    assoc = torch.empty(data.num_nodes, dtype=torch.long, device=device)
+
+    print("==========================================================")
+    print(f"=================*** {MODEL_NAME}: LinkPropPred: {DATA} ***=============")
+    print("==========================================================")
+
+    evaluator = Evaluator(name=DATA)
+    neg_sampler = dataset.negative_sampler
+
+    # for saving the results...
+    results_path = f"{osp.dirname(osp.abspath(__file__))}/saved_results"
+    if not osp.exists(results_path):
+        os.mkdir(results_path)
+        print("INFO: Create directory {}".format(results_path))
+    Path(results_path).mkdir(parents=True, exist_ok=True)
+    results_filename = f"{results_path}/{MODEL_NAME}_{DATA}_results.json"
+
     print(
         "-------------------------------------------------------------------------------"
     )
