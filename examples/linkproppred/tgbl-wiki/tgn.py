@@ -232,7 +232,7 @@ for run_idx in range(NUM_RUNS):
     set_random_seed(run_idx + SEED)
 
     # set the device
-    device = torch.device("cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # data loading
     dataset = PyGLinkPropPredDataset(name=DATA, root="datasets")
