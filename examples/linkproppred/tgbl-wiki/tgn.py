@@ -247,15 +247,9 @@ for run_idx in range(NUM_RUNS):
     val_data = data[val_mask]
     test_data = data[test_mask]
 
-    train_loader = TemporalDataLoader(
-        train_data, batch_size=BATCH_SIZE, num_workers=2, prefetch_factor=2
-    )
-    val_loader = TemporalDataLoader(
-        val_data, batch_size=BATCH_SIZE, num_workers=2, prefetch_factor=2
-    )
-    test_loader = TemporalDataLoader(
-        test_data, batch_size=BATCH_SIZE, num_workers=2, prefetch_factor=2
-    )
+    train_loader = TemporalDataLoader(train_data, batch_size=BATCH_SIZE)
+    val_loader = TemporalDataLoader(val_data, batch_size=BATCH_SIZE)
+    test_loader = TemporalDataLoader(test_data, batch_size=BATCH_SIZE)
 
     # Ensure to only sample actual destination nodes as negatives.
     min_dst_idx, max_dst_idx = int(data.dst.min()), int(data.dst.max())
