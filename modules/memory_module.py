@@ -258,6 +258,8 @@ class DyRepMemory(torch.nn.Module):
         memory_updater_type: str,
         use_src_emb_in_msg: bool = False,
         use_dst_emb_in_msg: bool = False,
+        time_encoder: str = "learned_cos",
+        multiplier: float = 1.0,
     ):
         super().__init__()
 
@@ -269,7 +271,8 @@ class DyRepMemory(torch.nn.Module):
         self.msg_s_module = message_module
         self.msg_d_module = copy.deepcopy(message_module)
         self.aggr_module = aggregator_module
-        self.time_enc = TimeEncoder(time_dim)
+        
+        self.time_enc = get_time_encoder(time_encoder, out_channels=time_dim, mul=multiplier)
 
         assert memory_updater_type in [
             "gru",
