@@ -209,7 +209,7 @@ def test(
 
     max_t = max(negative_edge_times) + 1
     evaluate_negative(max_t)
-    
+
     return predictions_neg, timestamps_neg
 
 
@@ -241,6 +241,8 @@ NUM_NEIGHBORS = 10
 TIME_ENCODER = args.time_encoder
 MULTIPLIER = args.mul
 
+TIME_STEP = args.time_step
+EDGE_STEP = args.edge_step
 
 MODEL_NAME = "TGN"
 
@@ -252,7 +254,7 @@ for run_idx in range(NUM_RUNS):
     # set the seed for deterministic results...
     torch.manual_seed(run_idx + SEED)
     set_random_seed(run_idx + SEED)
-    
+
     # set the device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -278,7 +280,7 @@ for run_idx in range(NUM_RUNS):
     n_bins = 50
 
     src_dst_pairs = []
-    for i in range(len(biggest)):
+    for i in range(0, len(biggest), EDGE_STEP):
         src, dst = biggest[i]
         src_dst_pairs.append([src, dst])
     print(f"Number of selected edges: {len(src_dst_pairs)}")
@@ -289,9 +291,8 @@ for run_idx in range(NUM_RUNS):
     )  # can't extend backwards without clashing with val/train
     upper_bound = int(test_data["t"].max() + time_range * 0.2)
 
-    # step = (upper_bound - lower_bound) // n_bins
-    step = 1
-    print(f"Span of time: {test_data['t'].max() - test_data['t'].min()}")
+    step = TIME_STEP
+    print(f"Span of time: {upper_bound - lower_bound}")
     print(f"INFO: step: {step}")
 
     negative_edge_times = list(range(lower_bound, upper_bound + 1, step))
@@ -308,7 +309,9 @@ for run_idx in range(NUM_RUNS):
     min_dst_idx, max_dst_idx = int(data.dst.min()), int(data.dst.max())
 
     # neighhorhood sampler
-    neighbor_loader = LastNeighborLoader(data.num_nodes, size=NUM_NEIGHBORS, device=device)
+    neighbor_loader = LastNeighborLoader(
+        data.num_nodes, size=NUM_NEIGHBORS, device=device
+    )
 
     # define the model end-to-end
     memory = TGNMemory(
@@ -344,7 +347,9 @@ for run_idx in range(NUM_RUNS):
     evaluator = Evaluator(name=DATA)
     neg_sampler = dataset.negative_sampler
 
-    print("-------------------------------------------------------------------------------")
+    print(
+        "-------------------------------------------------------------------------------"
+    )
     print(f"INFO: >>>>> Run: {run_idx} <<<<<")
     start_run = timeit.default_timer()
 
@@ -382,7 +387,9 @@ for run_idx in range(NUM_RUNS):
     # final testing
     start_test = timeit.default_timer()
 
-    predictions_neg, timestamps_neg = test(test_loader, src_dst_pairs, negative_edge_times)
+    predictions_neg, timestamps_neg = test(
+        test_loader, src_dst_pairs, negative_edge_times
+    )
     predictions_neg = np.array(predictions_neg)
     print(predictions_neg.shape)
 
@@ -397,7 +404,7 @@ for run_idx in range(NUM_RUNS):
         step_difference = mean_step_difference(predictions)
         print(f"Mean step difference for edge {i}: {step_difference}")
         mean_step_differences.append(step_difference)
-        
+
     mean_step_differences = np.array(mean_step_differences)
     mean_metric_over_all_unique_edges = np.mean(mean_step_differences)
     print(f"Mean step difference over all edges: {mean_metric_over_all_unique_edges}")

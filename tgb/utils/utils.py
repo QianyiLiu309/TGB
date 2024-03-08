@@ -74,6 +74,12 @@ def get_args():
     parser.add_argument(
         "--mul", type=float, help="Multiplier for time encoder", default=1.0
     )
+    parser.add_argument(
+        "--time_step", type=int, help="Time step when evaluating predictions", default=1
+    )
+    parser.add_argument(
+        "--edge_step", type=int, help="Edge step when evaluating predictions", default=1
+    )
 
     try:
         args = parser.parse_args()
