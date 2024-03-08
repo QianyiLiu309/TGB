@@ -11,22 +11,12 @@ import sys
 
 sys.path.append("..")
 
-import math
 import timeit
-
-import os
 import os.path as osp
-from pathlib import Path
 import numpy as np
 
 import torch
-from sklearn.metrics import average_precision_score, roc_auc_score
-from torch.nn import Linear
-
-from torch_geometric.datasets import JODIEDataset
 from torch_geometric.loader import TemporalDataLoader
-
-from torch_geometric.nn import TransformerConv
 
 # internal imports
 from tgb.utils.utils import get_args, set_random_seed, save_results
@@ -41,7 +31,6 @@ from modules.early_stopping import EarlyStopMonitor
 from tgb.linkproppred.dataset_pyg import PyGLinkPropPredDataset
 
 from matplotlib import pyplot as plt
-import pickle
 from tqdm import tqdm
 
 from plot_utils import (
@@ -293,7 +282,6 @@ for run_idx in range(NUM_RUNS):
         src, dst = biggest[i]
         src_dst_pairs.append([src, dst])
     print(f"Number of selected edges: {len(src_dst_pairs)}")
-    print(src_dst_pairs)
 
     time_range = test_data["t"].max() - test_data["t"].min()
     lower_bound = int(
