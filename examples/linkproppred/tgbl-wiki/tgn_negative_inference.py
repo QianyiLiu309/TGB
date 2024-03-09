@@ -406,7 +406,7 @@ for i in range(100, len(biggest), 200):
     # Small batch size unimportant for train/val
     train_loader = TemporalDataLoader(train_data, batch_size=200)
     val_loader = TemporalDataLoader(val_data, batch_size=200)
-    test_loader = TemporalDataLoader(test_data, batch_size=BATCH_SIZE)
+    test_loader = TemporalDataLoader(test_data, batch_size=1)
 
     # Ensure to only sample actual destination nodes as negatives.
     min_dst_idx, max_dst_idx = int(data.dst.min()), int(data.dst.max())
