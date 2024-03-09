@@ -12,6 +12,7 @@ DyRep
 command for an example run:
     python examples/linkproppred/tgbl-wiki/dyrep.py --data "tgbl-wiki" --num_run 1 --seed 1
 """
+
 import math
 import timeit
 import os
@@ -30,31 +31,31 @@ from modules.msg_func import IdentityMessage
 from modules.msg_agg import LastAggregator
 from modules.neighbor_loader import LastNeighborLoader
 from modules.memory_module import DyRepMemory
-from modules.early_stopping import  EarlyStopMonitor
+from modules.early_stopping import EarlyStopMonitor
 from tgb.linkproppred.dataset_pyg import PyGLinkPropPredDataset
-
 
 
 # ==========
 # ========== Define helper function...
 # ==========
 
+
 def train():
     r"""
     Training procedure for DyRep model
-    This function uses some objects that are globally defined in the current scrips 
+    This function uses some objects that are globally defined in the current scrips
 
     Parameters:
         None
     Returns:
         None
-            
-    """
-    model['memory'].train()
-    model['gnn'].train()
-    model['link_pred'].train()
 
-    model['memory'].reset_state()  # Start with a fresh memory.
+    """
+    model["memory"].train()
+    model["gnn"].train()
+    model["link_pred"].train()
+
+    model["memory"].reset_state()  # Start with a fresh memory.
     neighbor_loader.reset_state()  # Start with an empty graph.
 
     total_loss = 0
@@ -78,30 +79,30 @@ def train():
         assoc[n_id] = torch.arange(n_id.size(0), device=device)
 
         # Get updated memory of all nodes involved in the computation.
-        z, last_update = model['memory'](n_id)
+        z, last_update = model["memory"](n_id)
 
-        pos_out = model['link_pred'](z[assoc[src]], z[assoc[pos_dst]])
-        neg_out = model['link_pred'](z[assoc[src]], z[assoc[neg_dst]])
+        pos_out = model["link_pred"](z[assoc[src]], z[assoc[pos_dst]])
+        neg_out = model["link_pred"](z[assoc[src]], z[assoc[neg_dst]])
 
         loss = criterion(pos_out, torch.ones_like(pos_out))
         loss += criterion(neg_out, torch.zeros_like(neg_out))
 
         # update the memory with ground-truth
-        z = model['gnn'](
+        z = model["gnn"](
             z,
             last_update,
             edge_index,
             data.t[e_id].to(device),
             data.msg[e_id].to(device),
         )
-        model['memory'].update_state(src, pos_dst, t, msg, z, assoc)
+        model["memory"].update_state(src, pos_dst, t, msg, z, assoc)
 
         # update neighbor loader
         neighbor_loader.insert(src, pos_dst)
 
         loss.backward()
         optimizer.step()
-        model['memory'].detach()
+        model["memory"].detach()
         total_loss += float(loss) * batch.num_events
 
     return total_loss / train_data.num_events
@@ -120,9 +121,9 @@ def test(loader, neg_sampler, split_mode):
     Returns:
         perf_metric: the result of the performance evaluaiton
     """
-    model['memory'].eval()
-    model['gnn'].eval()
-    model['link_pred'].eval()
+    model["memory"].eval()
+    model["gnn"].eval()
+    model["link_pred"].eval()
 
     perf_list = []
 
@@ -134,7 +135,9 @@ def test(loader, neg_sampler, split_mode):
             pos_batch.msg,
         )
 
-        neg_batch_list = neg_sampler.query_batch(pos_src, pos_dst, pos_t, split_mode=split_mode)
+        neg_batch_list = neg_sampler.query_batch(
+            pos_src, pos_dst, pos_t, split_mode=split_mode
+        )
 
         for idx, neg_batch in enumerate(neg_batch_list):
             src = torch.full((1 + len(neg_batch),), pos_src[idx], device=device)
@@ -151,9 +154,9 @@ def test(loader, neg_sampler, split_mode):
             assoc[n_id] = torch.arange(n_id.size(0), device=device)
 
             # Get updated memory of all nodes involved in the computation.
-            z, last_update = model['memory'](n_id)
+            z, last_update = model["memory"](n_id)
 
-            y_pred = model['link_pred'](z[assoc[src]], z[assoc[dst]])
+            y_pred = model["link_pred"](z[assoc[src]], z[assoc[dst]])
             # compute MRR
             input_dict = {
                 "y_pred_pos": np.array([y_pred[0, :].squeeze(dim=-1).cpu()]),
@@ -161,20 +164,20 @@ def test(loader, neg_sampler, split_mode):
                 "eval_metric": [metric],
             }
             perf_list.append(evaluator.eval(input_dict)[metric])
-        
+
         # update the memory with positive edges
         n_id = torch.cat([pos_src, pos_dst]).unique()
         n_id, edge_index, e_id = neighbor_loader(n_id)
         assoc[n_id] = torch.arange(n_id.size(0), device=device)
-        z, last_update = model['memory'](n_id)
-        z = model['gnn'](
+        z, last_update = model["memory"](n_id)
+        z = model["gnn"](
             z,
             last_update,
             edge_index,
             data.t[e_id].to(device),
             data.msg[e_id].to(device),
         )
-        model['memory'].update_state(pos_src, pos_dst, pos_t, pos_msg, z, assoc)
+        model["memory"].update_state(pos_src, pos_dst, pos_t, pos_msg, z, assoc)
 
         # update the neighbor loader
         neighbor_loader.insert(pos_src, pos_dst)
@@ -182,6 +185,7 @@ def test(loader, neg_sampler, split_mode):
     perf_metric = float(torch.tensor(perf_list).mean())
 
     return perf_metric
+
 
 # ==========
 # ==========
@@ -197,7 +201,7 @@ print("INFO: Arguments:", args)
 DATA = "tgbl-wiki"
 LR = args.lr
 BATCH_SIZE = args.bs
-K_VALUE = args.k_value  
+K_VALUE = args.k_value
 NUM_EPOCH = args.num_epoch
 SEED = args.seed
 MEM_DIM = args.mem_dim
@@ -210,22 +214,23 @@ NUM_NEIGHBORS = 10
 TIME_ENCODER = args.time_encoder
 MULTIPLIER = args.mul
 
-MODEL_NAME = 'DyRep'
+MODEL_NAME = "DyRep"
 USE_SRC_EMB_IN_MSG = False
 USE_DST_EMB_IN_MSG = True
 # ==========
 
 
 for run_idx in range(NUM_RUNS):
-    print('-------------------------------------------------------------------------------')
+    print(
+        "-------------------------------------------------------------------------------"
+    )
     print(f"INFO: >>>>> Run: {run_idx} <<<<<")
     # set the device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+
     # set the seed for deterministic results...
     torch.manual_seed(run_idx + SEED)
     set_random_seed(run_idx + SEED)
-
 
     # data loading
     dataset = PyGLinkPropPredDataset(name=DATA, root="datasets")
@@ -248,7 +253,9 @@ for run_idx in range(NUM_RUNS):
     min_dst_idx, max_dst_idx = int(data.dst.min()), int(data.dst.max())
 
     # neighhorhood sampler
-    neighbor_loader = LastNeighborLoader(data.num_nodes, size=NUM_NEIGHBORS, device=device)
+    neighbor_loader = LastNeighborLoader(
+        data.num_nodes, size=NUM_NEIGHBORS, device=device
+    )
 
     # define the model end-to-end
     # 1) memory
@@ -259,7 +266,7 @@ for run_idx in range(NUM_RUNS):
         TIME_DIM,
         message_module=IdentityMessage(data.msg.size(-1), MEM_DIM, TIME_DIM),
         aggregator_module=LastAggregator(),
-        memory_updater_type='rnn',
+        memory_updater_type="rnn",
         use_src_emb_in_msg=USE_SRC_EMB_IN_MSG,
         use_dst_emb_in_msg=USE_DST_EMB_IN_MSG,
         time_encoder=TIME_ENCODER,
@@ -277,20 +284,19 @@ for run_idx in range(NUM_RUNS):
     # 3) link predictor
     link_pred = LinkPredictor(in_channels=EMB_DIM).to(device)
 
-    model = {'memory': memory,
-            'gnn': gnn,
-            'link_pred': link_pred}
+    model = {"memory": memory, "gnn": gnn, "link_pred": link_pred}
 
     # define an optimizer
     optimizer = torch.optim.Adam(
-        set(model['memory'].parameters()) | set(model['gnn'].parameters()) | set(model['link_pred'].parameters()),
+        set(model["memory"].parameters())
+        | set(model["gnn"].parameters())
+        | set(model["link_pred"].parameters()),
         lr=LR,
     )
     criterion = torch.nn.BCEWithLogitsLoss()
 
     # Helper vector to map global node indices to local ones.
     assoc = torch.empty(data.num_nodes, dtype=torch.long, device=device)
-
 
     print("==========================================================")
     print(f"=================*** {MODEL_NAME}: LinkPropPred: {DATA} ***=============")
@@ -300,20 +306,24 @@ for run_idx in range(NUM_RUNS):
     neg_sampler = dataset.negative_sampler
 
     # for saving the results...
-    results_path = f'{osp.dirname(osp.abspath(__file__))}/saved_results'
+    results_path = f"{osp.dirname(osp.abspath(__file__))}/saved_results"
     if not osp.exists(results_path):
         os.mkdir(results_path)
-        print('INFO: Create directory {}'.format(results_path))
+        print("INFO: Create directory {}".format(results_path))
     Path(results_path).mkdir(parents=True, exist_ok=True)
-    results_filename = f'{results_path}/{MODEL_NAME}_{DATA}_results.json'
+    results_filename = f"{results_path}/{MODEL_NAME}_{DATA}_results.json"
 
     start_run = timeit.default_timer()
-    
+
     # define an early stopper
-    save_model_dir = f'{osp.dirname(osp.abspath(__file__))}/saved_models/'
-    save_model_id = f'{MODEL_NAME}_{DATA}_{SEED}_{run_idx}'
-    early_stopper = EarlyStopMonitor(save_model_dir=save_model_dir, save_model_id=save_model_id, 
-                                    tolerance=TOLERANCE, patience=PATIENCE)
+    save_model_dir = f"{osp.dirname(osp.abspath(__file__))}/saved_models/"
+    save_model_id = f"{MODEL_NAME}_{DATA}_{SEED}_{run_idx}"
+    early_stopper = EarlyStopMonitor(
+        save_model_dir=save_model_dir,
+        save_model_id=save_model_id,
+        tolerance=TOLERANCE,
+        patience=PATIENCE,
+    )
 
     # ==================================================== Train & Validation
     # loading the validation negative samples
@@ -329,16 +339,19 @@ for run_idx in range(NUM_RUNS):
             f"Epoch: {epoch:02d}, Loss: {loss:.4f}, Training elapsed Time (s): {timeit.default_timer() - start_epoch_train: .4f}"
         )
 
-        # validation
-        start_val = timeit.default_timer()
-        perf_metric_val = test(val_loader, neg_sampler, split_mode="val")
-        print(f"\tValidation {metric}: {perf_metric_val: .4f}")
-        print(f"\tValidation: Elapsed time (s): {timeit.default_timer() - start_val: .4f}")
-        val_perf_list.append(perf_metric_val)
+        if epoch % 25 == 0:
+            # validation
+            start_val = timeit.default_timer()
+            perf_metric_val = test(val_loader, neg_sampler, split_mode="val")
+            print(f"\tValidation {metric}: {perf_metric_val: .4f}")
+            print(
+                f"\tValidation: Elapsed time (s): {timeit.default_timer() - start_val: .4f}"
+            )
+            val_perf_list.append(perf_metric_val)
 
-        # check for early stopping
-        if early_stopper.step_check(perf_metric_val, model):
-            break
+            # check for early stopping
+            if early_stopper.step_check(perf_metric_val, model):
+                break
 
     train_val_time = timeit.default_timer() - start_train_val
     print(f"Train & Validation Total Elapsed Time (s): {train_val_time: .4f}")
@@ -359,19 +372,26 @@ for run_idx in range(NUM_RUNS):
     test_time = timeit.default_timer() - start_test
     print(f"\tTest: Elapsed Time (s): {test_time: .4f}")
 
-    save_results({'model': MODEL_NAME,
-                  'data': DATA,
-                  'run': run_idx,
-                  'seed': SEED,
-                  f'val {metric}': val_perf_list,
-                  f'test {metric}': perf_metric_test,
-                  'test_time': test_time,
-                  'tot_train_val_time': train_val_time
-                  }, 
-    results_filename)
+    save_results(
+        {
+            "model": MODEL_NAME,
+            "data": DATA,
+            "run": run_idx,
+            "seed": SEED,
+            f"val {metric}": val_perf_list,
+            f"test {metric}": perf_metric_test,
+            "test_time": test_time,
+            "tot_train_val_time": train_val_time,
+        },
+        results_filename,
+    )
 
-    print(f"INFO: >>>>> Run: {run_idx}, elapsed time: {timeit.default_timer() - start_run: .4f} <<<<<")
-    print('-------------------------------------------------------------------------------')
+    print(
+        f"INFO: >>>>> Run: {run_idx}, elapsed time: {timeit.default_timer() - start_run: .4f} <<<<<"
+    )
+    print(
+        "-------------------------------------------------------------------------------"
+    )
 
 print(f"Overall Elapsed Time (s): {timeit.default_timer() - start_overall: .4f}")
 print("==============================================================")
