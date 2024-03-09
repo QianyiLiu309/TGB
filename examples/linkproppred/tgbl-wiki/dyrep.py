@@ -339,7 +339,7 @@ for run_idx in range(NUM_RUNS):
             f"Epoch: {epoch:02d}, Loss: {loss:.4f}, Training elapsed Time (s): {timeit.default_timer() - start_epoch_train: .4f}"
         )
 
-        if epoch % 25 == 0:
+        if epoch % 2 == 0:
             # validation
             start_val = timeit.default_timer()
             perf_metric_val = test(val_loader, neg_sampler, split_mode="val")

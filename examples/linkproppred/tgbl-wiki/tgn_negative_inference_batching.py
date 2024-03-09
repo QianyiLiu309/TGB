@@ -180,7 +180,7 @@ def test(
 
                 y_pred_neg = model["link_pred"](z[assoc[src_n]], z[assoc[dst_n]])
                 y_pred_neg = y_pred_neg.squeeze(-1).unsqueeze(0)
-                y_pred_negs.append(y_pred_neg)
+                y_pred_negs.append(y_pred_neg.cpu())
 
             y_pred_neg = torch.cat(y_pred_negs)
             predictions_neg.extend(y_pred_neg.squeeze(-1).cpu().numpy())
@@ -208,8 +208,8 @@ def test(
         model["memory"].update_state(pos_src, pos_dst, pos_t, pos_msg)
         neighbor_loader.insert(pos_src, pos_dst)
 
-    max_t = max(negative_edge_times) + 1
-    evaluate_negative(max_t)
+    # max_t = max(negative_edge_times) + 1
+    # evaluate_negative(max_t)
 
     return predictions_neg, timestamps_neg
 
@@ -259,7 +259,8 @@ metric_output_path = (
 f = open(str(metric_output_path), "w")
 
 
-metrics_across_runs = []
+step_difference_across_runs = []
+total_variation_across_runs = []
 for run_idx in range(NUM_RUNS):
     # ==========
     # set the seed for deterministic results...
@@ -289,8 +290,6 @@ for run_idx in range(NUM_RUNS):
     print(f"Number of unqiue edges: {len(biggest)}")
     f.write(f"Number of unqiue edges: {len(biggest)}\n")
 
-    n_bins = 50
-
     src_dst_pairs = []
     for i in range(0, len(biggest), EDGE_STEP):
         src, dst = biggest[i]
@@ -302,7 +301,7 @@ for run_idx in range(NUM_RUNS):
     lower_bound = int(
         test_data["t"].min()
     )  # can't extend backwards without clashing with val/train
-    upper_bound = int(test_data["t"].max() + time_range * 0.2)
+    upper_bound = int(test_data["t"].max())
 
     step = TIME_STEP
     print(f"Span of time: {upper_bound - lower_bound}")
@@ -416,18 +415,26 @@ for run_idx in range(NUM_RUNS):
     predictions_neg = np.array(predictions_neg)
     print(predictions_neg.shape)
 
-    def mean_step_difference(predictions):
+    def step_difference_mean(predictions):
         return np.mean(np.abs(predictions[1:] - predictions[:-1]))
 
     mean_step_differences = []
+    mean_total_variations = []
 
     for i in range(len(src_dst_pairs)):
         src, dst = src_dst_pairs[i]
         predictions = predictions_neg[:, i]
-        step_difference = mean_step_difference(predictions)
+        step_difference = step_difference_mean(predictions)
         # print(f"Mean step difference for edge {src}-{dst}: {step_difference}")
         f.write(f"Mean step difference for edge {src}-{dst}: {step_difference}\n")
+
+        total_variation = total_variation_per_unit_time(
+            [], np.array(predictions), np.array(timestamps_neg)
+        )[1]
+        # print(f"Total variation for edge {src}-{dst}: {total_variation}")
+        f.write(f"Total variation for edge {src}-{dst}: {total_variation}\n")
         mean_step_differences.append(step_difference)
+        mean_total_variations.append(total_variation)
 
     mean_step_differences = np.array(mean_step_differences)
     mean_metric_over_all_unique_edges = np.mean(mean_step_differences)
@@ -436,7 +443,15 @@ for run_idx in range(NUM_RUNS):
         f"Mean step difference over all edges: {mean_metric_over_all_unique_edges}\n"
     )
 
-    metrics_across_runs.append(mean_metric_over_all_unique_edges)
+    mean_total_variations = np.array(mean_total_variations)
+    mean_metric_over_all_unique_edges = np.mean(mean_total_variations)
+    print(f"Mean total variation over all edges: {mean_metric_over_all_unique_edges}")
+    f.write(
+        f"Mean total variation over all edges: {mean_metric_over_all_unique_edges}\n"
+    )
+
+    step_difference_across_runs.append(mean_metric_over_all_unique_edges)
+    total_variation_across_runs.append(mean_metric_over_all_unique_edges)
 
     print(f"Overall Elapsed Time (s): {timeit.default_timer() - start_overall: .4f}")
     f.write(
@@ -444,12 +459,20 @@ for run_idx in range(NUM_RUNS):
     )
     print("==============================================================")
 
-metrics_across_runs = np.array(metrics_across_runs)
-mean_metric_across_runs = np.mean(metrics_across_runs)
-std_metric_across_runs = np.std(metrics_across_runs)
-print(f"Mean metric across runs: {mean_metric_across_runs}")
-f.write(f"Mean metric across runs: {mean_metric_across_runs}\n")
-print(f"Std metric across runs: {std_metric_across_runs}")
-f.write(f"Std metric across runs: {std_metric_across_runs}\n")
+step_difference_across_runs = np.array(step_difference_across_runs)
+step_difference_mean = np.mean(step_difference_across_runs)
+step_difference_std = np.std(step_difference_across_runs)
+print(f"step difference mean across runs: {step_difference_mean}")
+f.write(f"step difference mean across runs: {step_difference_mean}\n")
+print(f"step difference std across runs: {step_difference_std}")
+f.write(f"step difference std across runs: {step_difference_std}\n")
+
+total_variation_across_runs = np.array(total_variation_across_runs)
+total_variation_mean = np.mean(total_variation_across_runs)
+total_variation_std = np.std(total_variation_across_runs)
+print(f"total variation mean across runs: {total_variation_mean}")
+f.write(f"total variation mean across runs: {total_variation_mean}\n")
+print(f"total variation std across runs: {total_variation_std}")
+f.write(f"total variation std across runs: {total_variation_std}\n")
 
 f.close()
