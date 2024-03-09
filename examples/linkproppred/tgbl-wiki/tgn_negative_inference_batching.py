@@ -32,6 +32,7 @@ from tgb.linkproppred.dataset_pyg import PyGLinkPropPredDataset
 
 from matplotlib import pyplot as plt
 from tqdm import tqdm
+from pathlib import Path
 
 from plot_utils import (
     get_temporal_edge_times,
@@ -248,6 +249,15 @@ MODEL_NAME = "TGN"
 
 DO_REAL_TEST = False
 
+metric_output_dir = Path(f"{osp.dirname(osp.abspath(__file__))}/results/")
+metric_output_dir.mkdir(parents=True, exist_ok=True)
+metric_output_path = (
+    metric_output_dir / f"{MODEL_NAME}_{DATA}_{SEED}_{TIME_ENCODER}_{MULTIPLIER}.txt"
+)
+
+f = open(str(metric_output_path), "w")
+
+
 metrics_across_runs = []
 for run_idx in range(NUM_RUNS):
     # ==========
@@ -276,6 +286,7 @@ for run_idx in range(NUM_RUNS):
     biggest = sorted(set(test_pairs), key=lambda i: counts[i], reverse=True)
 
     print(f"Number of unqiue edges: {len(biggest)}")
+    f.write(f"Number of unqiue edges: {len(biggest)}\n")
 
     n_bins = 50
 
@@ -284,6 +295,7 @@ for run_idx in range(NUM_RUNS):
         src, dst = biggest[i]
         src_dst_pairs.append([src, dst])
     print(f"Number of selected edges: {len(src_dst_pairs)}")
+    f.write(f"Number of selected edges: {len(src_dst_pairs)}\n")
 
     time_range = test_data["t"].max() - test_data["t"].min()
     lower_bound = int(
@@ -293,11 +305,16 @@ for run_idx in range(NUM_RUNS):
 
     step = TIME_STEP
     print(f"Span of time: {upper_bound - lower_bound}")
+    f.write(f"Span of time: {upper_bound - lower_bound}\n")
     print(f"INFO: step: {step}")
+    f.write(f"INFO: step: {step}\n")
 
     negative_edge_times = list(range(lower_bound, upper_bound + 1, step))
     print(
         f"INFO: Number of negative timestamps to do inference at: {len(negative_edge_times)}"
+    )
+    f.write(
+        f"INFO: Number of negative timestamps to do inference at: {len(negative_edge_times)}\n"
     )
 
     # Small batch size unimportant for train/val
@@ -336,12 +353,16 @@ for run_idx in range(NUM_RUNS):
 
     model = {"memory": memory, "gnn": gnn, "link_pred": link_pred}
     print(model)
+    f.write(f"{model}\n")
 
     # Helper vector to map global node indices to local ones.
     assoc = torch.empty(data.num_nodes, dtype=torch.long, device=device)
 
     print("==========================================================")
     print(f"=================*** {MODEL_NAME}: LinkPropPred: {DATA} ***=============")
+    f.write(
+        f"=================*** {MODEL_NAME}: LinkPropPred: {DATA} ***=============\n"
+    )
     print("==========================================================")
 
     evaluator = Evaluator(name=DATA)
@@ -351,6 +372,7 @@ for run_idx in range(NUM_RUNS):
         "-------------------------------------------------------------------------------"
     )
     print(f"INFO: >>>>> Run: {run_idx} <<<<<")
+    f.write(f"INFO: >>>>> Run: {run_idx} <<<<<\n")
     start_run = timeit.default_timer()
 
     # define an early stopper
@@ -402,20 +424,31 @@ for run_idx in range(NUM_RUNS):
         src, dst = src_dst_pairs[i]
         predictions = predictions_neg[:, i]
         step_difference = mean_step_difference(predictions)
-        print(f"Mean step difference for edge {i}: {step_difference}")
+        # print(f"Mean step difference for edge {src}-{dst}: {step_difference}")
+        f.write(f"Mean step difference for edge {src}-{dst}: {step_difference}\n")
         mean_step_differences.append(step_difference)
 
     mean_step_differences = np.array(mean_step_differences)
     mean_metric_over_all_unique_edges = np.mean(mean_step_differences)
     print(f"Mean step difference over all edges: {mean_metric_over_all_unique_edges}")
+    f.write(
+        f"Mean step difference over all edges: {mean_metric_over_all_unique_edges}\n"
+    )
 
     metrics_across_runs.append(mean_metric_over_all_unique_edges)
 
     print(f"Overall Elapsed Time (s): {timeit.default_timer() - start_overall: .4f}")
+    f.write(
+        f"Overall Elapsed Time (s): {timeit.default_timer() - start_overall: .4f}\n"
+    )
     print("==============================================================")
 
 metrics_across_runs = np.array(metrics_across_runs)
 mean_metric_across_runs = np.mean(metrics_across_runs)
 std_metric_across_runs = np.std(metrics_across_runs)
 print(f"Mean metric across runs: {mean_metric_across_runs}")
+f.write(f"Mean metric across runs: {mean_metric_across_runs}\n")
 print(f"Std metric across runs: {std_metric_across_runs}")
+f.write(f"Std metric across runs: {std_metric_across_runs}\n")
+
+f.close()
