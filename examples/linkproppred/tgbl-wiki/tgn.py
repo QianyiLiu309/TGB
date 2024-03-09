@@ -340,6 +340,12 @@ for run_idx in range(NUM_RUNS):
             f"Epoch: {epoch:02d}, Loss: {loss:.4f}, Training elapsed Time (s): {timeit.default_timer() - start_epoch_train: .4f}"
         )
 
+        te = model["memory"].time_enc
+        attr = ["power", "multipliers", "temperature", "temperature_bias"]
+        for a in attr:
+            if hasattr(te, a):
+                print(a, ":", getattr(te, a))
+
         if epoch % 25 == 0:
             # validation
             start_val = timeit.default_timer()

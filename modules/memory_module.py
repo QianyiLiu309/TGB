@@ -102,7 +102,7 @@ class TGNMemory(torch.nn.Module):
             self.msg_d_module.reset_parameters()
         if hasattr(self.aggr_module, "reset_parameters"):
             self.aggr_module.reset_parameters()
-        self.time_enc.reset_parameters()
+        # self.time_enc.reset_parameters()
         self.memory_updater.reset_parameters()
         self.reset_state()
 
