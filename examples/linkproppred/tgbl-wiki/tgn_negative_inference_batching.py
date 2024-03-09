@@ -252,7 +252,8 @@ DO_REAL_TEST = False
 metric_output_dir = Path(f"{osp.dirname(osp.abspath(__file__))}/results/")
 metric_output_dir.mkdir(parents=True, exist_ok=True)
 metric_output_path = (
-    metric_output_dir / f"{MODEL_NAME}_{DATA}_{SEED}_{TIME_ENCODER}_{MULTIPLIER}.txt"
+    metric_output_dir
+    / f"{MODEL_NAME}_{DATA}_{SEED}_{TIME_ENCODER}_{MULTIPLIER}_{TIME_STEP}_{EDGE_STEP}.txt"
 )
 
 f = open(str(metric_output_path), "w")
