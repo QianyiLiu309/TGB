@@ -44,16 +44,16 @@ test_mask = dataset.test_mask
 data = dataset.get_TemporalData()
 
 train_data = data[train_mask]
-val_data = data[val_mask]
-test_data = data[test_mask]
+# val_data = data[val_mask]
+# test_data = data[test_mask]
 
-test_pairs = set(zip(test_data.src.tolist(), test_data.dst.tolist()))
+test_pairs = set(zip(train_data.src.tolist(), train_data.dst.tolist()))
 
 all_gaps = []
 
 for i, j in test_pairs:
-    inds = np.logical_and(test_data.src == i, test_data.dst == j)
-    ts = test_data.t[inds]
+    inds = np.logical_and(train_data.src == i, train_data.dst == j)
+    ts = train_data.t[inds]
     all_gaps.append(ts[1:] - ts[:-1])
 
 all_gaps = np.concatenate(all_gaps)
@@ -63,6 +63,9 @@ all_gaps = np.sort(all_gaps)
 plt.hist(all_gaps, bins=1000)
 plt.yscale('log')
 plt.show()
+
+print(f"Saving dataset data to ../dataset_stats/{args.data}_gaps.npy")
+np.save(f"../dataset_stats/{args.data}_gaps.npy", all_gaps)
 
 # counts = {i: test_pairs.count(i) for i in set(test_pairs)}
 # biggest = sorted(set(test_pairs), key=lambda i: counts[i], reverse=True)
