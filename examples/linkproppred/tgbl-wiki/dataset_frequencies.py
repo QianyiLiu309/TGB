@@ -75,3 +75,6 @@ w = 2 * np.pi * top_100_frequencies
 print(np.float32(w).dtype)
 
 np.save(f"../dataset_stats/{args.data}_frequencies_weight.npy", np.float32(w))
+
+periods = (1 / top_100_frequencies) * 3600
+print(f"Top 100 periods: {periods}")
