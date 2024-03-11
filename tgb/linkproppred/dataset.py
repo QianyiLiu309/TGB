@@ -89,7 +89,7 @@ class LinkPropPredDataset(object):
         self._val_data = None
         self._test_data = None
 
-        if self.name != "tgbl-reddit":
+        if self.name != "tgbl-reddit" and self.name != "tgbl-mooc":
             self.download()
         print(f"root: {self.root}")
         # check if the root directory exists, if not create it
@@ -230,7 +230,7 @@ class LinkPropPredDataset(object):
                 df, edge_feat, node_ids = csv_to_pd_data_sc(self.meta_dict["fname"])
             elif self.name == "tgbl-wiki":
                 df, edge_feat, node_ids = load_edgelist_wiki(self.meta_dict["fname"])
-            elif self.name == "tgbl-reddit":
+            else:
                 df, edge_feat, node_ids = load_edgelist_wiki(self.meta_dict["fname"])
 
             save_pkl(edge_feat, OUT_EDGE_FEAT)
