@@ -68,7 +68,9 @@ class TGNMemory(torch.nn.Module):
         self.msg_d_module = copy.deepcopy(message_module)
         self.aggr_module = aggregator_module
 
-        self.time_enc = get_time_encoder(time_encoder, out_channels=time_dim, mul=multiplier)
+        self.time_enc = get_time_encoder(
+            time_encoder, out_channels=time_dim, mul=multiplier
+        )
 
         # self.gru = GRUCell(message_module.out_channels, memory_dim)
         if memory_updater_cell == "gru":  # for TGN
@@ -271,8 +273,10 @@ class DyRepMemory(torch.nn.Module):
         self.msg_s_module = message_module
         self.msg_d_module = copy.deepcopy(message_module)
         self.aggr_module = aggregator_module
-        
-        self.time_enc = get_time_encoder(time_encoder, out_channels=time_dim, mul=multiplier)
+
+        self.time_enc = get_time_encoder(
+            time_encoder, out_channels=time_dim, mul=multiplier
+        )
 
         assert memory_updater_type in [
             "gru",
