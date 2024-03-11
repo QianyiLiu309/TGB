@@ -227,6 +227,7 @@ for run_idx in range(NUM_RUNS):
     print(f"INFO: >>>>> Run: {run_idx} <<<<<")
     # set the device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu")
 
     # set the seed for deterministic results...
     torch.manual_seed(run_idx + SEED)
@@ -317,7 +318,7 @@ for run_idx in range(NUM_RUNS):
 
     # define an early stopper
     save_model_dir = f"{osp.dirname(osp.abspath(__file__))}/saved_models/"
-    save_model_id = f"{MODEL_NAME}_{DATA}_{SEED}_{run_idx}"
+    save_model_id = f"{MODEL_NAME}_{DATA}_{SEED}_{run_idx}_{TIME_ENCODER}_{MULTIPLIER}"
     early_stopper = EarlyStopMonitor(
         save_model_dir=save_model_dir,
         save_model_id=save_model_id,
@@ -339,7 +340,7 @@ for run_idx in range(NUM_RUNS):
             f"Epoch: {epoch:02d}, Loss: {loss:.4f}, Training elapsed Time (s): {timeit.default_timer() - start_epoch_train: .4f}"
         )
 
-        if epoch % 2 == 0:
+        if epoch % 10 == 0:
             # validation
             start_val = timeit.default_timer()
             perf_metric_val = test(val_loader, neg_sampler, split_mode="val")
