@@ -22,11 +22,12 @@ class BColors:
     BOLD = "\033[1m"
     UNDERLINE = "\033[4m"
 
+
 DATA_URL_DICT = {
-    "tgbl-wiki":"https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-wiki-v2.zip", #"https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-wiki.zip", #v1
-    "tgbl-review": "https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-review-v2.zip", #"https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-review.zip", #v1
-    "tgbl-coin": "https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-coin-v2.zip", #"https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-coin.zip",
-    "tgbl-flight": "https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-flight-v2.zip", #"tgbl-flight": "https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-flight_edgelist_v2_ts.zip",
+    "tgbl-wiki": "https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-wiki-v2.zip",  # "https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-wiki.zip", #v1
+    "tgbl-review": "https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-review-v2.zip",  # "https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-review.zip", #v1
+    "tgbl-coin": "https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-coin-v2.zip",  # "https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-coin.zip",
+    "tgbl-flight": "https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-flight-v2.zip",  # "tgbl-flight": "https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-flight_edgelist_v2_ts.zip",
     "tgbl-comment": "https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-comment.zip",
     "tgbn-trade": "https://object-arbutus.cloud.computecanada.ca/tgb/tgbn-trade.zip",
     "tgbn-genre": "https://object-arbutus.cloud.computecanada.ca/tgb/tgbn-genre.zip",
@@ -35,20 +36,20 @@ DATA_URL_DICT = {
 }
 
 
-
 DATA_VERSION_DICT = {
-    "tgbl-wiki": 2,  
+    "tgbl-wiki": 2,
     "tgbl-review": 2,
     "tgbl-coin": 2,
     "tgbl-comment": 1,
     "tgbl-flight": 2,
+    "tgbl-reddit": 1,
     "tgbn-trade": 1,
     "tgbn-genre": 1,
     "tgbn-reddit": 1,
     "tgbn-token": 1,
 }
 
-#"tgbl-flight-v1": "https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-flight.zip",
+# "tgbl-flight-v1": "https://object-arbutus.cloud.computecanada.ca/tgb/tgbl-flight.zip",
 
 DATA_EVAL_METRIC_DICT = {
     "tgbl-wiki": "mrr",
@@ -56,6 +57,7 @@ DATA_EVAL_METRIC_DICT = {
     "tgbl-coin": "mrr",
     "tgbl-comment": "mrr",
     "tgbl-flight": "mrr",
+    "tgbl-reddit": "mrr",
     "tgbn-trade": "ndcg",
     "tgbn-genre": "ndcg",
     "tgbn-reddit": "ndcg",

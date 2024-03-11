@@ -9,11 +9,11 @@ from clint.textui import progress
 
 from tgb.linkproppred.negative_sampler import NegativeEdgeSampler
 from tgb.utils.info import (
-    PROJ_DIR, 
-    DATA_URL_DICT, 
-    DATA_VERSION_DICT, 
-    DATA_EVAL_METRIC_DICT, 
-    BColors
+    PROJ_DIR,
+    DATA_URL_DICT,
+    DATA_VERSION_DICT,
+    DATA_EVAL_METRIC_DICT,
+    BColors,
 )
 from tgb.utils.pre_process import (
     csv_to_pd_data,
@@ -49,7 +49,6 @@ class LinkPropPredDataset(object):
             self.url = None
             print(f"Dataset {self.name} url not found, download not supported yet.")
 
-        
         # check if the evaluatioin metric are specified
         if self.name in DATA_EVAL_METRIC_DICT:
             self.metric = DATA_EVAL_METRIC_DICT[self.name]
@@ -58,7 +57,6 @@ class LinkPropPredDataset(object):
             print(
                 f"Dataset {self.name} default evaluation metric not found, it is not supported yet."
             )
-
 
         root = PROJ_DIR + root
 
@@ -75,7 +73,7 @@ class LinkPropPredDataset(object):
 
         if name == "tgbl-flight":
             self.meta_dict["nodefile"] = self.root + "/" + "airport_node_feat.csv"
-        
+
         self.meta_dict["val_ns"] = self.root + "/" + self.name + "_val_ns.pkl"
         self.meta_dict["test_ns"] = self.root + "/" + self.name + "_test_ns.pkl"
 
@@ -91,7 +89,9 @@ class LinkPropPredDataset(object):
         self._val_data = None
         self._test_data = None
 
-        self.download()
+        if self.name != "tgbl-reddit":
+            self.download()
+        print(f"root: {self.root}")
         # check if the root directory exists, if not create it
         if osp.isdir(self.root):
             print("Dataset directory is ", self.root)
@@ -111,28 +111,35 @@ class LinkPropPredDataset(object):
         updates the file names based on the current version number
         prompt the user to download the new version via self.version_passed variable
         """
-        if (self.name in DATA_VERSION_DICT):
+        if self.name in DATA_VERSION_DICT:
             version = DATA_VERSION_DICT[self.name]
         else:
             print(f"Dataset {self.name} version number not found.")
             self.version_passed = False
             return None
-        
-        if (version > 1):
-            #* check if current version is outdated
-            self.meta_dict["fname"] = self.root + "/" + self.name + "_edgelist_v" + str(int(version)) + ".csv"
+
+        if version > 1:
+            # * check if current version is outdated
+            self.meta_dict["fname"] = (
+                self.root + "/" + self.name + "_edgelist_v" + str(int(version)) + ".csv"
+            )
             self.meta_dict["nodefile"] = None
             if self.name == "tgbl-flight":
-                self.meta_dict["nodefile"] = self.root + "/" + "airport_node_feat_v" + str(int(version)) + ".csv"
-            self.meta_dict["val_ns"] = self.root + "/" + self.name + "_val_ns_v" + str(int(version)) + ".pkl"
-            self.meta_dict["test_ns"] = self.root + "/" + self.name + "_test_ns_v" + str(int(version)) + ".pkl"
-            
-            if (not osp.exists(self.meta_dict["fname"])):
+                self.meta_dict["nodefile"] = (
+                    self.root + "/" + "airport_node_feat_v" + str(int(version)) + ".csv"
+                )
+            self.meta_dict["val_ns"] = (
+                self.root + "/" + self.name + "_val_ns_v" + str(int(version)) + ".pkl"
+            )
+            self.meta_dict["test_ns"] = (
+                self.root + "/" + self.name + "_test_ns_v" + str(int(version)) + ".pkl"
+            )
+
+            if not osp.exists(self.meta_dict["fname"]):
                 print(f"Dataset {self.name} version {int(version)} not found.")
                 print(f"Please download the latest version of the dataset.")
                 self.version_passed = False
                 return None
-        
 
     def download(self):
         """
@@ -223,6 +230,8 @@ class LinkPropPredDataset(object):
                 df, edge_feat, node_ids = csv_to_pd_data_sc(self.meta_dict["fname"])
             elif self.name == "tgbl-wiki":
                 df, edge_feat, node_ids = load_edgelist_wiki(self.meta_dict["fname"])
+            elif self.name == "tgbl-reddit":
+                df, edge_feat, node_ids = load_edgelist_wiki(self.meta_dict["fname"])
 
             save_pkl(edge_feat, OUT_EDGE_FEAT)
             df.to_pickle(OUT_DF)
@@ -295,7 +304,7 @@ class LinkPropPredDataset(object):
         test_mask = timestamps > test_time
 
         return train_mask, val_mask, test_mask
-    
+
     @property
     def eval_metric(self) -> str:
         """
@@ -318,9 +327,7 @@ class LinkPropPredDataset(object):
         r"""
         load the negative samples for the validation set
         """
-        self.ns_sampler.load_eval_set(
-            fname=self.meta_dict["val_ns"], split_mode="val"
-        )
+        self.ns_sampler.load_eval_set(fname=self.meta_dict["val_ns"], split_mode="val")
 
     def load_test_ns(self) -> None:
         r"""
@@ -397,7 +404,7 @@ class LinkPropPredDataset(object):
 
 
 def main():
-    name = "tgbl-comment" 
+    name = "tgbl-comment"
     dataset = LinkPropPredDataset(name=name, root="datasets", preprocess=True)
 
     dataset.node_feat

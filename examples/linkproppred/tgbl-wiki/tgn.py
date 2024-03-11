@@ -206,7 +206,7 @@ start_overall = timeit.default_timer()
 args, _ = get_args()
 print("INFO: Arguments:", args)
 
-DATA = "tgbl-wiki"
+DATA = args.data
 LR = args.lr
 BATCH_SIZE = args.bs
 K_VALUE = args.k_value
