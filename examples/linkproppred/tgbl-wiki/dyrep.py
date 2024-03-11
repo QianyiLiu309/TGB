@@ -354,6 +354,8 @@ for run_idx in range(NUM_RUNS):
             if early_stopper.step_check(perf_metric_val, model):
                 break
 
+    early_stopper.save_checkpoint(model)
+
     train_val_time = timeit.default_timer() - start_train_val
     print(f"Train & Validation Total Elapsed Time (s): {train_val_time: .4f}")
 
