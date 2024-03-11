@@ -261,6 +261,7 @@ f = open(str(metric_output_path), "w")
 
 step_difference_across_runs = []
 total_variation_across_runs = []
+total_variation_across_runs_with_hop = [[], [], []]
 for run_idx in range(NUM_RUNS):
     # ==========
     # set the seed for deterministic results...
@@ -422,6 +423,8 @@ for run_idx in range(NUM_RUNS):
     mean_step_differences = []
     mean_total_variations = []
 
+    mean_total_variations_with_hop = [[], [], []]
+
     for i in range(len(src_dst_pairs)):
         src, dst = src_dst_pairs[i]
         predictions = predictions_neg[:, i]
@@ -439,15 +442,16 @@ for run_idx in range(NUM_RUNS):
 
         hop0, hop1, hop2 = get_temporal_edge_times(dataset, src, dst, 2, mask=test_mask)
 
-        for hop_threshold in range(4):
+        for hop_threshold in range(1, 4):
             totvar, totvar_per_sec = total_variation_per_unit_time(
                 [hop0, hop1, hop2][:hop_threshold],
                 predictions,
                 timestamps_neg,
             )
+            mean_total_variations_with_hop[hop_threshold - 1].append(totvar_per_sec)
 
-            print(f"TotalVar-{hop_threshold} = {totvar}")
-            print(f"TotalVar/s-{hop_threshold} = {totvar_per_sec}")
+            # f.write(f"TotalVar-{hop_threshold} = {totvar}")
+            f.write(f"TotalVar/s-{hop_threshold} = {totvar_per_sec}")
 
     mean_step_differences = np.array(mean_step_differences)
     mean_metric_over_all_unique_edges = np.mean(mean_step_differences)
@@ -465,6 +469,23 @@ for run_idx in range(NUM_RUNS):
 
     step_difference_across_runs.append(mean_metric_over_all_unique_edges)
     total_variation_across_runs.append(mean_metric_over_all_unique_edges)
+
+    for hop in range(1, 4):
+        mean_total_variations_with_hop = np.array(
+            mean_total_variations_with_hop[hop - 1]
+        )
+        mean_metric_over_all_unique_edges_with_hop = np.mean(
+            mean_total_variations_with_hop
+        )
+        print(
+            f"Mean total variation over all edges excluding hop {hop}: {mean_metric_over_all_unique_edges_with_hop}"
+        )
+        f.write(
+            f"Mean total variation over all edges excluding hop {hop}: {mean_metric_over_all_unique_edges_with_hop}\n"
+        )
+        total_variation_across_runs_with_hop[hop - 1].append(
+            mean_metric_over_all_unique_edges_with_hop
+        )
 
     print(f"Overall Elapsed Time (s): {timeit.default_timer() - start_overall: .4f}")
     f.write(
@@ -487,5 +508,24 @@ print(f"total variation mean across runs: {total_variation_mean}")
 f.write(f"total variation mean across runs: {total_variation_mean}\n")
 print(f"total variation std across runs: {total_variation_std}")
 f.write(f"total variation std across runs: {total_variation_std}\n")
+
+for hop in range(1, 4):
+    total_variation_across_runs_with_hop = np.array(
+        total_variation_across_runs_with_hop[hop - 1]
+    )
+    total_variation_mean = np.mean(total_variation_across_runs_with_hop)
+    total_variation_std = np.std(total_variation_across_runs_with_hop)
+    print(
+        f"total variation mean across runs (excluding hop {hop}): {total_variation_mean}"
+    )
+    f.write(
+        f"total variation mean across runs (excluding hop {hop}): {total_variation_mean}\n"
+    )
+    print(
+        f"total variation std across runs (excluding hop {hop}): {total_variation_std}"
+    )
+    f.write(
+        f"total variation std across runs (excluding hop {hop}): {total_variation_std}\n"
+    )
 
 f.close()
