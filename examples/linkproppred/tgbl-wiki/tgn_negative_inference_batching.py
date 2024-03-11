@@ -292,8 +292,6 @@ for run_idx in range(NUM_RUNS):
 
     src_dst_pairs = []
     for i in range(0, len(biggest), EDGE_STEP):
-        if i == 2:
-            break
         src, dst = biggest[i]
         src_dst_pairs.append([src, dst])
     print(f"Number of selected edges: {len(src_dst_pairs)}")
