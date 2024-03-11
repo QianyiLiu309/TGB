@@ -292,6 +292,8 @@ for run_idx in range(NUM_RUNS):
 
     src_dst_pairs = []
     for i in range(0, len(biggest), EDGE_STEP):
+        if i == 2:
+            break
         src, dst = biggest[i]
         src_dst_pairs.append([src, dst])
     print(f"Number of selected edges: {len(src_dst_pairs)}")
@@ -413,6 +415,7 @@ for run_idx in range(NUM_RUNS):
         test_loader, src_dst_pairs, negative_edge_times
     )
     predictions_neg = np.array(predictions_neg)
+    timestamps_neg = np.array(timestamps_neg)
     print(predictions_neg.shape)
 
     def step_difference_mean(predictions):
@@ -429,12 +432,24 @@ for run_idx in range(NUM_RUNS):
         f.write(f"Mean step difference for edge {src}-{dst}: {step_difference}\n")
 
         total_variation = total_variation_per_unit_time(
-            [], np.array(predictions), np.array(timestamps_neg)
+            [], np.array(predictions), timestamps_neg
         )[1]
         # print(f"Total variation for edge {src}-{dst}: {total_variation}")
         f.write(f"Total variation for edge {src}-{dst}: {total_variation}\n")
         mean_step_differences.append(step_difference)
         mean_total_variations.append(total_variation)
+
+        hop0, hop1, hop2 = get_temporal_edge_times(dataset, src, dst, 2, mask=test_mask)
+
+        for hop_threshold in range(4):
+            totvar, totvar_per_sec = total_variation_per_unit_time(
+                [hop0, hop1, hop2][:hop_threshold],
+                predictions,
+                timestamps_neg,
+            )
+
+            print(f"TotalVar-{hop_threshold} = {totvar}")
+            print(f"TotalVar/s-{hop_threshold} = {totvar_per_sec}")
 
     mean_step_differences = np.array(mean_step_differences)
     mean_metric_over_all_unique_edges = np.mean(mean_step_differences)
