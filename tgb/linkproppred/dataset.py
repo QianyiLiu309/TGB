@@ -89,7 +89,11 @@ class LinkPropPredDataset(object):
         self._val_data = None
         self._test_data = None
 
-        if self.name != "tgbl-reddit" and self.name != "tgbl-mooc":
+        if (
+            self.name != "tgbl-reddit"
+            and self.name != "tgbl-mooc"
+            and self.name != "tgbl-lastfm"
+        ):
             self.download()
         print(f"root: {self.root}")
         # check if the root directory exists, if not create it

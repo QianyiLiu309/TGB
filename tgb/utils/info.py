@@ -61,6 +61,7 @@ DATA_EVAL_METRIC_DICT = {
     "tgbl-mooc": "mrr",
     "tgbl-uci": "mrr",
     "tgbl-enron": "mrr",
+    "tgbl-lastfm": "mrr",
     "tgbn-trade": "ndcg",
     "tgbn-genre": "ndcg",
     "tgbn-reddit": "ndcg",
