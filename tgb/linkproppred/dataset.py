@@ -93,6 +93,7 @@ class LinkPropPredDataset(object):
             self.name != "tgbl-reddit"
             and self.name != "tgbl-mooc"
             and self.name != "tgbl-lastfm"
+            and self.name != "tgbl-canparl"
         ):
             self.download()
         print(f"root: {self.root}")
