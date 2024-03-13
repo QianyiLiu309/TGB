@@ -80,6 +80,7 @@ def get_args():
     parser.add_argument(
         "--edge_step", type=int, help="Edge step when evaluating predictions", default=1
     )
+    parser.add_argument("--model", type=str, help="Model architecture", default="TGN")
 
     try:
         args = parser.parse_args()

@@ -14,7 +14,7 @@ for dataset in "${DATASET_VALUES[@]}"; do
   for run_idx in "${RUN_IDX_VALUES[@]}"; do
     for time_encoder in "${TIME_ENCODER_VALUES[@]}"; do
       for multiplier in "${MULTIPLIER_VALUES[@]}"; do
-        filename="examples/linkproppred/tgbl-wiki/saved_models/dyrep/DyRep_tgbl-${dataset}_1_${run_idx}_${time_encoder}_${multiplier}.pth"
+        filename="examples/linkproppred/tgbl-wiki/saved_models/DyRep_tgbl-${dataset}_1_${run_idx}_${time_encoder}_${multiplier}.pth"
         
         # Check if the file exists
         if [ ! -e "$filename" ]; then

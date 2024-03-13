@@ -26,7 +26,7 @@ from modules.emb_module import GraphAttentionEmbedding
 from modules.msg_func import IdentityMessage
 from modules.msg_agg import LastAggregator
 from modules.neighbor_loader import LastNeighborLoader
-from modules.memory_module import TGNMemory
+from modules.memory_module import TGNMemory, DyRepMemory
 from modules.early_stopping import EarlyStopMonitor
 from tgb.linkproppred.dataset_pyg import PyGLinkPropPredDataset
 
@@ -245,7 +245,7 @@ MULTIPLIER = args.mul
 TIME_STEP = args.time_step
 EDGE_STEP = args.edge_step
 
-MODEL_NAME = "TGN"
+MODEL_NAME = args.model
 
 DO_REAL_TEST = False
 EXCLUDE_EVENTS = False
@@ -333,16 +333,33 @@ for run_idx in range(NUM_RUNS):
     )
 
     # define the model end-to-end
-    memory = TGNMemory(
-        data.num_nodes,
-        data.msg.size(-1),
-        MEM_DIM,
-        TIME_DIM,
-        message_module=IdentityMessage(data.msg.size(-1), MEM_DIM, TIME_DIM),
-        aggregator_module=LastAggregator(),
-        time_encoder=TIME_ENCODER,
-        multiplier=MULTIPLIER,
-    ).to(device)
+    if MODEL_NAME == "TGN":
+        memory = TGNMemory(
+            data.num_nodes,
+            data.msg.size(-1),
+            MEM_DIM,
+            TIME_DIM,
+            message_module=IdentityMessage(data.msg.size(-1), MEM_DIM, TIME_DIM),
+            aggregator_module=LastAggregator(),
+            time_encoder=TIME_ENCODER,
+            multiplier=MULTIPLIER,
+        ).to(device)
+    elif MODEL_NAME == "DyRep":
+        USE_SRC_EMB_IN_MSG = False
+        USE_DST_EMB_IN_MSG = True
+        memory = DyRepMemory(
+            data.num_nodes,
+            data.msg.size(-1),
+            MEM_DIM,
+            TIME_DIM,
+            message_module=IdentityMessage(data.msg.size(-1), MEM_DIM, TIME_DIM),
+            aggregator_module=LastAggregator(),
+            memory_updater_type="rnn",
+            use_src_emb_in_msg=USE_SRC_EMB_IN_MSG,
+            use_dst_emb_in_msg=USE_DST_EMB_IN_MSG,
+            time_encoder=TIME_ENCODER,
+            multiplier=MULTIPLIER,
+        ).to(device)
 
     gnn = GraphAttentionEmbedding(
         in_channels=MEM_DIM,
