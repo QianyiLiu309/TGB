@@ -425,7 +425,7 @@ for run_idx in range(NUM_RUNS):
 
     mean_total_variations_with_hop = [[], [], []]
 
-    for i in range(len(src_dst_pairs)):
+    for i in tqdm(range(len(src_dst_pairs))):
         src, dst = src_dst_pairs[i]
         predictions = predictions_neg[:, i]
         step_difference = step_difference_mean(predictions)
@@ -471,11 +471,8 @@ for run_idx in range(NUM_RUNS):
     total_variation_across_runs.append(mean_metric_over_all_unique_edges)
 
     for hop in range(1, 4):
-        mean_total_variations_with_hop = np.array(
-            mean_total_variations_with_hop[hop - 1]
-        )
         mean_metric_over_all_unique_edges_with_hop = np.mean(
-            mean_total_variations_with_hop
+            np.array(mean_total_variations_with_hop[hop - 1])
         )
         print(
             f"Mean total variation over all edges excluding hop {hop}: {mean_metric_over_all_unique_edges_with_hop}"
@@ -510,11 +507,11 @@ print(f"total variation std across runs: {total_variation_std}")
 f.write(f"total variation std across runs: {total_variation_std}\n")
 
 for hop in range(1, 4):
-    total_variation_across_runs_with_hop = np.array(
+    total_variation_across_runs_with_single_hop = np.array(
         total_variation_across_runs_with_hop[hop - 1]
     )
-    total_variation_mean = np.mean(total_variation_across_runs_with_hop)
-    total_variation_std = np.std(total_variation_across_runs_with_hop)
+    total_variation_mean = np.mean(total_variation_across_runs_with_single_hop)
+    total_variation_std = np.std(total_variation_across_runs_with_single_hop)
     print(
         f"total variation mean across runs (excluding hop {hop}): {total_variation_mean}"
     )
