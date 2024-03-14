@@ -1,13 +1,4 @@
 """Evaluate how much parameters have changed before and after training"""
-"""
-Dynamic Link Prediction with a TGN model with Early Stopping
-Reference: 
-    - https://github.com/pyg-team/pytorch_geometric/blob/master/examples/tgn.py
-
-command for an example run:
-    python examples/linkproppred/tgbl-wiki/tgn.py --data "tgbl-wiki" --num_run 1 --seed 1
-"""
-
 import math
 import timeit
 import random
@@ -110,23 +101,23 @@ for run_idx in range(args.num_run):
 
     init_params = extract_params(model)
 
-    # ts, outs_before = eval_time_func(data.t[0], data.t[-1], num_time_samples, memory.time_enc, args.time_dim)
-    # all_outs_before.append(outs_before)
+    ts, outs_before = eval_time_func(data.t[0], data.t[-1], num_time_samples, memory.time_enc, args.time_dim)
+    all_outs_before.append(outs_before)
 
     ########### Load checkpoint
     early_stopper.load_checkpoint(model)
     trained_params = extract_params(model)
 
-    # ts, outs_after = eval_time_func(data.t[0], data.t[-1], num_time_samples, memory.time_enc, args.time_dim)
-    # all_outs_after.append(outs_after)
+    ts, outs_after = eval_time_func(data.t[0], data.t[-1], num_time_samples, memory.time_enc, args.time_dim)
+    all_outs_after.append(outs_after)
 
     # Plot some of the time components
-    # for i in range(0, args.time_dim, 10):
-    #     plt.plot(ts, outs_before[:, i], color="C0", label="Before")
-    #     plt.plot(ts, outs_after[:, i], color="C1", label="After")
-    #     plt.legend()
-    #     plt.xlabel("t")
-    #     plt.show()
+    for i in range(0, args.time_dim, 10):
+        plt.plot(ts, outs_before[:, i], color="C0", label="Before")
+        plt.plot(ts, outs_after[:, i], color="C1", label="After")
+        plt.legend()
+        plt.xlabel("t")
+        plt.show()
 
     diffs = {}
 
