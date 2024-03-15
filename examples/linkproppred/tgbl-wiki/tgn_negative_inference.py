@@ -36,7 +36,7 @@ from modules.emb_module import GraphAttentionEmbedding
 from modules.msg_func import IdentityMessage
 from modules.msg_agg import LastAggregator
 from modules.neighbor_loader import LastNeighborLoader
-from modules.memory_module import TGNMemory
+from modules.memory_module import TGNMemory, DyRepMemory
 from modules.early_stopping import EarlyStopMonitor
 from tgb.linkproppred.dataset_pyg import PyGLinkPropPredDataset
 
@@ -343,9 +343,9 @@ TIME_ENCODER = args.time_encoder
 MULTIPLIER = args.mul
 
 
-MODEL_NAME = "TGN"
+MODEL_NAME = args.model
 
-DO_REAL_TEST = True
+DO_REAL_TEST = False
 # ==========
 
 # set the device
@@ -375,7 +375,7 @@ tgn_results = {}
 
 run_all = False
 
-for i in range(100, len(biggest), 200):
+for i in range(210, len(biggest), 5):
     target_src, target_dst = biggest[i]
     count = counts[(target_src, target_dst)]
     if count == 1:
@@ -417,16 +417,34 @@ for i in range(100, len(biggest), 200):
     )
 
     # define the model end-to-end
-    memory = TGNMemory(
-        data.num_nodes,
-        data.msg.size(-1),
-        MEM_DIM,
-        TIME_DIM,
-        message_module=IdentityMessage(data.msg.size(-1), MEM_DIM, TIME_DIM),
-        aggregator_module=LastAggregator(),
-        time_encoder=TIME_ENCODER,
-        multiplier=MULTIPLIER,
-    ).to(device)
+    # define the model end-to-end
+    if MODEL_NAME == "TGN":
+        memory = TGNMemory(
+            data.num_nodes,
+            data.msg.size(-1),
+            MEM_DIM,
+            TIME_DIM,
+            message_module=IdentityMessage(data.msg.size(-1), MEM_DIM, TIME_DIM),
+            aggregator_module=LastAggregator(),
+            time_encoder=TIME_ENCODER,
+            multiplier=MULTIPLIER,
+        ).to(device)
+    elif MODEL_NAME == "DyRep":
+        USE_SRC_EMB_IN_MSG = False
+        USE_DST_EMB_IN_MSG = True
+        memory = DyRepMemory(
+            data.num_nodes,
+            data.msg.size(-1),
+            MEM_DIM,
+            TIME_DIM,
+            message_module=IdentityMessage(data.msg.size(-1), MEM_DIM, TIME_DIM),
+            aggregator_module=LastAggregator(),
+            memory_updater_type="rnn",
+            use_src_emb_in_msg=USE_SRC_EMB_IN_MSG,
+            use_dst_emb_in_msg=USE_DST_EMB_IN_MSG,
+            time_encoder=TIME_ENCODER,
+            multiplier=MULTIPLIER,
+        ).to(device)
 
     gnn = GraphAttentionEmbedding(
         in_channels=MEM_DIM,
@@ -540,25 +558,31 @@ for i in range(100, len(biggest), 200):
             print(f"Length of hop1: {len(hop1)}")
             print(f"Length of hop2: {len(hop2)}")
 
+            plt.figure(figsize=(5, 3))
             plt.plot(
                 prediction_results[0],
                 prediction_results[1],
                 alpha=0.7,
                 linewidth=1.5,
             )
-            plt.xlabel("Time")
+            plt.xlabel("Time (s)")
             plt.ylabel("Predicted link probability")
             plt.ylim(-0.01, 1.01)
-
-            for etime in hop0:
-                plt.axvline(x=etime, color="C1", ls="--", linewidth=1.0, alpha=1.0)
-
-            for etime in hop1:
-                plt.axvline(x=etime, color="C2", ls="--", linewidth=1.0, alpha=1.0)
+            plt.xlim(2.585 * 10**6, 2.595 * 10**6)
 
             for etime in hop2:
                 plt.axvline(x=etime, color="C3", ls="--", linewidth=1.0, alpha=1.0)
 
+            for etime in hop1:
+                plt.axvline(x=etime, color="C2", ls="--", linewidth=1.0, alpha=1.0)
+
+            for etime in hop0:
+                plt.axvline(x=etime, color="C1", ls="--", linewidth=1.0, alpha=1.0)
+
+            plt.savefig(
+                f"{MODEL_NAME}_{TIME_ENCODER}_{target_src}_{target_dst}.pdf",
+                bbox_inches="tight",
+            )
             plt.show()
 
         print(f"INFO: Test: Evaluation Setting: >>> ONE-VS-MANY <<< ")
